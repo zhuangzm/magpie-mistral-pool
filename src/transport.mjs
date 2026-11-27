@@ -79,6 +79,10 @@ export function createTransport({
 } = {}) {
   let resolved = null
   let resolving = null
+  // Magpie's plugin host is Bun. It replaces globalThis.fetch with a wrapper
+  // that applies the host's proxy (and a per-request `proxy` option), so the
+  // npm undici build must not be used there: it would bypass that wrapper.
+  const bun = typeof globalThis.Bun !== 'undefined' && typeof globalThis.Bun.version === 'string'
   const proxy = proxyUrl ?? envProxyUrl()
 
   const resolveImpl = () => {
@@ -88,6 +92,10 @@ export function createTransport({
       if (fetchImpl) {
         if (proxyUrl) logger?.('warn', 'proxyUrl is set but a custom fetch was provided; the proxy is not applied')
         resolved = { fetch: fetchImpl, dispatcher: undefined }
+        return resolved
+      }
+      if (bun) {
+        resolved = { fetch: globalThis.fetch, dispatcher: undefined }
         return resolved
       }
       try {
@@ -125,7 +133,12 @@ export function createTransport({
     let attempt = 0
     for (;;) {
       try {
-        return await fetchOnce(impl, dispatcher, url, init, { firstOutputMs, idleMs, logger })
+        return await fetchOnce(impl, dispatcher, url, init, {
+          firstOutputMs,
+          idleMs,
+          logger,
+          proxy: bun ? proxy : undefined,
+        })
       } catch (error) {
         const retryable = error?.code === 'TRANSPORT_RESET' || error?.code === 'TRANSPORT_NETWORK'
         if (!retryable || attempt >= maxRetriesBeforeFirstByte || init?.signal?.aborted) throw error
@@ -139,7 +152,7 @@ export function createTransport({
   return { fetch }
 }
 
-async function fetchOnce(impl, dispatcher, url, init, { firstOutputMs, idleMs }) {
+async function fetchOnce(impl, dispatcher, url, init, { firstOutputMs, idleMs, proxy }) {
   const caller = init?.signal
   const controller = new AbortController()
   let timedOut = null
@@ -164,6 +177,7 @@ async function fetchOnce(impl, dispatcher, url, init, { firstOutputMs, idleMs })
   try {
     const sendInit = { ...init, signal: controller.signal }
     if (dispatcher) sendInit.dispatcher = dispatcher
+    if (proxy && sendInit.proxy === undefined) sendInit.proxy = proxy
     response = await impl(url, sendInit)
   } catch (error) {
     clearTimeout(firstTimer)

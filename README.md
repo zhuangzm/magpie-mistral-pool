@@ -54,8 +54,9 @@ surface. An API key sees them only with `options.includeApiSurface: true`.
 
 - First response byte: **720 s** (`options.firstOutputMs`).
 - Stream idle between chunks: **300 s** (`options.idleMs`).
-- TCP keepalive when `undici` is installed; otherwise the global `fetch` is
-  used and `proxyUrl` logs a warning instead of silently pretending to work.
+- TCP keepalive when `undici` is installed. In Magpie's Bun host the plugin
+  uses the host's `fetch` instead, which applies `proxyUrl` per request and
+  owns the connection settings.
 - No 60 s header timeout: it would kill a deep-thinking request before its
   first byte.
 - SSE is passed chunk by chunk with backpressure; nothing buffers a whole
@@ -68,11 +69,16 @@ surface. An API key sees them only with `options.includeApiSurface: true`.
 { "proxyUrl": "http://127.0.0.1:7890" }
 ```
 
-`proxyUrl` needs `undici` (an optional dependency). Node's global `fetch`
-ignores `HTTPS_PROXY`; on Node 22.21+/24+ you can instead run Magpie with
-`NODE_USE_ENV_PROXY=1` and `HTTPS_PROXY` set. That works with or without
+On Node, `proxyUrl` needs `undici` (an optional dependency). Node's global
+`fetch` ignores `HTTPS_PROXY`; on Node 22.21+/24+ you can instead run Magpie
+with `NODE_USE_ENV_PROXY=1` and `HTTPS_PROXY` set. That works with or without
 `undici`: the transport reads the same flag and builds a `ProxyAgent` when
 the package is present, otherwise Node's own fetch does it.
+
+Under Magpie's Bun host the plugin does not load `undici` at all — that would
+bypass the host's fetch. It calls the host's `fetch` and passes `proxyUrl` as
+Bun's per-request `proxy` option, so the plugin host's proxy settings and CA
+store apply as they do for every other provider.
 
 The undici agent's internal `headersTimeout` / `bodyTimeout` are disabled on
 purpose. Its 300 s default would otherwise kill a request whose first byte
@@ -98,7 +104,9 @@ magpie group set <group> stays=session
 - **Timeouts** — raise `firstOutputMs` / `idleMs`, or check the proxy. A
   timeout before any byte is `TRANSPORT_TIMEOUT_FIRST_OUTPUT`; a stalled
   stream is `TRANSPORT_TIMEOUT_IDLE`.
-- **Proxy ignored** — install `undici`, or use `NODE_USE_ENV_PROXY=1`.
+- **Proxy ignored** — on Node, install `undici` or use
+  `NODE_USE_ENV_PROXY=1`; under Magpie's Bun host the per-request `proxy`
+  option is already applied.
 
 ## Tests
 
