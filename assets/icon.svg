@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Mistral Vibe">
+  <defs>
+    <linearGradient id="wind" x1="12" y1="12" x2="52" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFD54A"/>
+      <stop offset=".5" stop-color="#FF8A00"/>
+      <stop offset="1" stop-color="#FA3C1E"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0B0F16"/>
+  <path d="M14 46V18l18 18 18-18v28" fill="none" stroke="url(#wind)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M48 24h4M50 32h5M48 40h4" stroke="url(#wind)" stroke-width="3" stroke-linecap="round" opacity=".85"/>
+</svg>
