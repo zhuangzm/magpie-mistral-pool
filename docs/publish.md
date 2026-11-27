@@ -11,7 +11,7 @@
 | Magpie 插件名 | `Mistral Vibe (honest)`；provider `mistral-vibe`（第二条入口 `mistral-vibe-api`） |
 | 已就绪 | 中英双 README（`README.md` / `README.en.md`）、MIT LICENSE、`magpie.*` 元数据、CI（ubuntu/windows/macos × node 20/22/24） |
 | 已验证 | `node --test` 61/61；`npm pack --dry-run` 15 文件 / 46 kB，不含 `docs/`、`test/`、`fixtures/`、实验 JSON |
-| 未就绪 | 远端仓库、tag、npm 发布、市场上架 |
+| 未就绪 | 远端仓库、tag、Discover 收录（靠 Public 仓 + topic，约 30 分钟）、npm 发布（可选） |
 
 ## 1. 推到 GitHub
 
@@ -52,6 +52,8 @@ magpie plugin login mistral-vibe
 magpie plugin
 ```
 
+本机 `magpie` 不在 PATH 上，可执行文件是 `D:\Program Files\magpie\magpie-windows-amd64.exe`；上面三条命令要么用全路径，要么先把该目录加进 PATH。
+
 - 改代码时用本地目录：`magpie plugin add D:\workspaceAI\magpie-mistral-pool`，改完重载宿主生效。
 - `engine` 默认 `direct`；要消耗 `$300` Vibe 池，需要这台机器 PATH 里有 `vibe-acp`（`uv tool install --python 3.14 mistral-vibe`）。
 - 设置选项用 `magpie plugin options <name> "{\"engine\":\"acp\"}"`，不要手改运行态文件。
@@ -72,9 +74,37 @@ npm publish --registry=https://registry.npmjs.org --access public
 
 发布之后 `magpie plugin add @solary/magpie-mistral-pool` 和 `magpie plugin add npm:@solary/magpie-mistral-pool` 都能用，README 里那三种装法才全部成立。
 
-## 5. 上 Magpie 插件市场（可选）
+## 5. 上 Magpie 插件市场（Discover）
 
-市场列表是 `D:\workspaceAI\plugins` 的 `registry.json`，加一条 entry 提 PR：
+两条通道，**主路径不发 npm、不改任何 `registry.json`**。
+
+### 5.1 主路径：GitHub topic 自动收录（推荐）
+
+Discover 页读的是社区市场仓 `D:\workspaceAI\plugins` 的 `dist` 分支上的 `tagged.json`（桌面端经 `usemagpie.ai/api/plugins/tagged` 取）。该文件由 `.github/workflows/tagged.yml` 每 30 分钟（cron `7,37 * * * *`，也可手动 `workflow_dispatch`）跑 `node scripts/tagged.mjs` 生成：**搜 GitHub topic `magpie-plugin`**，逐个拉 raw `package.json` 判定能不能装。
+
+上架因此只有两步：
+
+1. 仓库 **Public** 且已推到 GitHub（第 1 步）；
+2. 仓库首页 About 右侧齿轮 → Topics 加 **`magpie-plugin`**。
+
+收录的四个硬条件本仓已逐条满足：
+
+| 条件 | 脚本位置 | 本仓现状 |
+| --- | --- | --- |
+| raw `package.json` 可读，`name` 匹配 npm 包名正则 | `scripts/tagged.mjs:100` | `@solary/magpie-mistral-pool` ✅ |
+| 能判出类型（provider 类无 `magpie.agent/page/hooks`） | `scripts/tagged-kind.mjs` 的 `kindOf` | 有 `main`、无 agent/page/hooks → provider ✅ |
+| 声明的入口文件在仓库里真实存在 | `scripts/tagged-kind.mjs` 的 `entryOf` | `main: ./index.mjs` ✅ |
+| 未归档、非 fork、owner 不是 `magpie-community` | `scripts/tagged.mjs:137` | ✅ |
+
+收录后的装法就是第 3 步那条 `magpie plugin add github:weijianping/magpie-mistral-pool`。市场里既有先例都这么发：`packages/type4me/README.md` 明写「Until it is on npm, install it from GitHub」，`company-guard`、`agentcompass` 同样以 `github:owner/repo` 分发。
+
+不想等 cron：去 `D:\workspaceAI\plugins` 的 Actions 对 `tagged` 点一次 **Run workflow**。
+
+### 5.2 可选：`registry.json` 精编 entry（需 npm 先发版）
+
+精编 entry 才会带 `providers` 和双语 `summary` 出现在市场条目位；该仓 `pr.yml` 会跑 `new-to-npm` 检查，因此依赖第 4 步，且只有 `@magpie-community/*` 有 `dist` 分支兜底。
+
+发版后加一条 entry 提 PR：
 
 ```json
 { "package": "@solary/magpie-mistral-pool", "name": "Mistral Vibe (Pool)", "providers": ["mistral-vibe", "mistral-vibe-api"], "community": true,
