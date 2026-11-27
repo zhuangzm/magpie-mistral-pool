@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 代码仓库 | `D:\workspaceAI\magpie-mistral-pool`，分支 `master` |
+| 代码仓库 | `D:\workspaceAI\magpie-mistral-pool`，分支 `main` |
 | npm 名 | `@solary/magpie-mistral-pool`，版本 `0.1.0` |
 | Magpie 插件名 | `Mistral Vibe (honest)`；provider `mistral-vibe`（第二条入口 `mistral-vibe-api`） |
 | 已就绪 | 中英双 README（`README.md` / `README.en.md`）、MIT LICENSE、`magpie.*` 元数据、CI（ubuntu/windows/macos × node 20/22/24） |
@@ -23,10 +23,10 @@
 
 ```powershell
 cd D:\workspaceAI\magpie-mistral-pool
-git push -u origin master
+git push -u origin main
 ```
 
-本机没有 `gh` CLI，也没有 `GITHUB_TOKEN`，第一次推会由 Git Credential Manager 弹浏览器登录，那是预期行为。若想走 token，用 `git push https://<token>@github.com/zhuangzm/magpie-mistral-pool.git master`，但别把带 token 的 URL 留在 `git remote -v` 里。
+本机没有 `gh` CLI，也没有 `GITHUB_TOKEN`，第一次推会由 Git Credential Manager 弹浏览器登录，那是预期行为。若想走 token，用 `git push https://<token>@github.com/zhuangzm/magpie-mistral-pool.git main`，但别把带 token 的 URL 留在 `git remote -v` 里。
 
 **必须 Public**：Magpie 的 `github:owner/repo` spec 是匿名拉取的，私有仓库装不上。
 
