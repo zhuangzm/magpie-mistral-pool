@@ -1,3 +1,5 @@
+> **历史文档（已归档）**：本文为立项初期的补充草案，其前置握手与 Speakeasy UA 假设已在 [plan1-review.md](plan1-review.md) 中核对并推翻。当前实现请以根目录 [README.md](../README.md) 为准。
+
 你测试 `SammySnake-d/magpie-mistral-code` 和 `handsomezhuzhu/MistralVibe2API` 仍无法消耗 `$300` Vibe 额度，核心原因在于 **Mistral 在 `mistral-vibe` v3.x 升级后收紧了 Vibe 额度池的准入校验**。旧版社区插件仅做了简单的 Key 转发，未对齐官方 `mistralai/mistral-vibe`（v3.1.5）的完整握手与请求特征，导致请求被 Mistral 网关判定为普通 API 调用并落入已耗尽的 `$30` 池（触发 `402`）。
 
 结合 **`mistralai/mistral-vibe`**（官方客户端协议标准）、**`SammySnake-d/magpie-mistral-code`**（Magpie 插件生命周期与 OAuth/额度查询框架）以及 **`handsomezhuzhu/MistralVibe2API`**（OpenAI 协议转换与流式适配层），以下是可直接交给开发 Agent 执行的完善版实施方案。

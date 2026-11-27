@@ -1,3 +1,5 @@
+> **历史文档（已归档）**：本文为立项初期的原始方案，其中关于客户端指纹与自建网关的假设已在 [plan1-review.md](plan1-review.md) 中证伪。当前实现请以根目录 [README.md](../README.md) 为准。
+
 ## 1. 项目背景与核心目标
 
 本计划旨在将开源项目 `lili-luo/dsh-plugin-bundle` 中的 `dsh-mistral-pool` 核心能力，按照 `magpie-community/plugins` 的社区插件规范，移植并重构为独立的 Magpie 插件 **`magpie-mistral-pool`**。

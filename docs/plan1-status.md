@@ -1,9 +1,9 @@
 # magpie-mistral-pool 开发状态（供第三方审核）
 
-- 日期：2026-11-27（Asia/Shanghai）
+- 日期：2026-11-27 / 2026-11-28（Asia/Shanghai）
 - 仓库：`D:\workspaceAI\magpie-mistral-pool`
-- 当前 HEAD：`9373f61 fix: tighten transport, acp lifecycle, and billing failure handling`
-- 测试：`npm test` → **61 / 61 通过**（0 失败 / 0 跳过，约 6.3s）
+- 代码基线：`9373f61 fix: tighten transport, acp lifecycle, and billing failure handling`（后续文档与发版配置同步至 `165c288`）
+- 测试：`npm test` → **61 / 61 通过**（0 失败 / 0 跳过）
 - 阶段结论：路线 B（诚实直连，`engine: direct`）与路线 A 的最小实现（`engine: acp` → `vibe-acp` 子进程）**双引擎均已落地**，ACP 实测已在本机 Magpie 内稳定消耗 `$300` Vibe 池；12 月 1 日账期重置前**冻结功能范围**，只做实验数据采集。
 
 ---
@@ -32,7 +32,7 @@
 
 - `index.mjs:322` — `const engine = options.engine === 'acp' ? 'acp' : 'direct'`，默认 `direct`（未知值一律回落，不静默升权）。
 - `index.mjs:326` — `providerId = options.providerId || PROVIDER`，`PROVIDER` 见 `src/core.mjs:8`（`mistral-vibe`）。
-- `index.mjs:593-600` — `engine === 'acp'` 时用 `createAcpFetch({ bridge: acpFor(key), fallback: directFetch })`，即 **ACP 失败可回落直连**，不会硬失败。
+- `index.mjs:593-600` — `engine === 'acp'` 时用 `createAcpFetch({ bridge: acpFor(key), fallback: directFetch })`：`/chat/completions` 走 `bridge.fetch`（ACP 失败直接返回结构化错误 JSON，**不会越池回落到 `$30` 直连**）；仅非 `/chat/completions` 请求（如 `/models`）走 `fallback: directFetch`（见 `index.mjs:272-312`）。
 - `index.mjs:601-607` — `direct` 时用 `createPluginFetch`，每请求重签 key。
 - `index.mjs:612` — provider 声明 `id: providerId`（宿主按 `ownKey(spec, id)` 隔离凭证 / 配置 / 用量）。
 - `index.mjs:621-627` — `chat.headers` 仅对 `[providerId, providerId + '-plugin']` 写 `x-affinity` / `x-session-id`，用于下游 `stays=session` 粘性。
@@ -96,6 +96,8 @@ ACP 侧：
 
 ## 5. 宿主加载实况
 
+> 本节是 **2026-11-27 的双入口实况**，已过时。2026-11-28 本地已收敛为单入口（只留 `engine=acp`），双入口的回贴步骤与验证结果见 **§12**。
+
 - `D:\Program Files\magpie\data\plugins.json` 末尾两条同 spec entry：
   - `engine=acp`，`proxyUrl=http://127.0.0.1:7890`
   - `engine=direct`，`providerId=mistral-vibe-api`，`includeApiSurface=false`，同 proxyUrl
@@ -126,7 +128,7 @@ ACP 侧：
 | `src/acp/runtime.mjs` | 会话 / 进程生命周期加固 |
 | `src/billing.mjs` | 无 `limit` 显示百分比（`:62`）；401 / 不可达 / 5xx+0 混合失败分类（`:112-131`） |
 | `test/acp.test.mjs` +78 / `test/plugin.test.mjs` +28 / `test/billing.test.mjs` +25 / `test/transport.test.mjs` +17 / `test/core.test.mjs` +1 | 对应回归 |
-| `.gitignore` | 新增 `.tmp-shot*.png`（收窄此前的 `*.png`，避免误忽略真实资源） |
+| `.gitignore` | 新增 `.tmp-shot*.png` 忽略规则 |
 
 提交信息按 transport / acp / billing / plugin+core 四组分段，便于逐条 review。
 
@@ -155,8 +157,8 @@ ACP 侧：
 
 - **`vibe-acp` 版本漂移无降级矩阵**：目前只协商 `protocolVersion: 1`，官方 CLI 升级后需人工回归（`scripts/acp-smoke.mjs`、`scripts/acp-tool-smoke.mjs` 可作探针）。
 - **`headersTimeout: 0` 的正确性依赖看门狗**：若未来有人绕过 `createTransport` 直连 undici，长思考会重新被 300s 掐断。
-- **`maxBridges` 淘汰策略**：当前按 LRU + 忙碌过滤；若单 key 并发长期超过 4，会出现桥重建开销（有 `fallback: directFetch` 兜底，不报错）。
-- **双 entry 面板冗余卡片**：宿主行为，暂不合并；12/1 后若确认只需一路，可退回单 entry。
+- **`maxBridges` 淘汰策略**：当前按 LRU + 忙碌过滤（`isBridgeBusy`）；若活跃 key 数超过 4 且全员忙碌，会临时保留超出桥而不误杀在途会话；若单桥重建或 ACP 报错，`/chat/completions` 直接返回上游错误而不静默降级到 `$30` 直连（`fallback: directFetch` 仅服务非对话端点）。
+- **双 entry 面板冗余卡片**：宿主行为。**已按此结论退回单 entry（2026-11-28，见 §12）**；12/1 后需要 `$30` 备用通道时按 §12.4 回贴。
 - **`direct` 引擎在 `$30` 耗尽期不可用**：属配额事实，非代码缺陷。
 
 ---
@@ -190,7 +192,54 @@ ACP 侧：
 
 ## 11. 相关文档与脚本
 
+- 使用与发布：`README.md`、`README.en.md`、`docs/publish.md`、`docs/release-notes-v0.1.0.md`、`.github/workflows/ci.yml`
 - 方案与评审：`docs/plan1.md`、`docs/plan1.1.md`、`docs/plan1-review.md`、`docs/plan1-B-taskbook.md`
 - 实验手册：`docs/experiment-1201-billing.md`
 - 探针脚本：`scripts/billing-probe.mjs`、`scripts/acp-smoke.mjs`、`scripts/acp-tool-smoke.mjs`、`fixtures/fake-vibe-acp.mjs`
 
+## 12. 分发收敛：单入口（当前）与双入口回贴
+
+### 12.1 为什么收敛
+
+用户要求面板只显示一张「Mistral Vibe (honest)」卡。卡片数 = `plugins.json` 里的 **entry 数**（不是 provider 数），卡片标题读 `package.json` 的 `magpie.name`；同一 package 挂两条 entry 必然渲染成两张同名卡，因此**想要单卡只能删掉第二条 entry**，改 spec 或改 provider 名都无效。
+
+### 12.2 本次动作（2026-11-28）
+
+| 项 | 内容 |
+| --- | --- |
+| 文件 | `D:\Program Files\magpie\data\plugins.json` |
+| 变更 | 10 条 → 9 条，移除 `engine=direct` / `providerId=mistral-vibe-api` 那条 |
+| 保留 | `engine=acp` + `proxyUrl=http://127.0.0.1:7890` |
+| 备份 | `plugins.json.bak`（双入口原状）、`plugins.json.bak2-20261128`（本次改动前） |
+| 代码 | **未改动**。`providerId` 派生（`index.mjs:326`）、`providerName`（`index.mjs:424-429`）与 `direct` 引擎实现全部留在仓库里，随时可回贴 |
+
+### 12.3 验证（`magpie plugin list` 实跑）
+
+```text
+github:zhuangzm/magpie-mistral-pool (@solary/magpie-mistral-pool 0.1.0)  on
+  mistral-vibe (Mistral Vibe (ACP · $300), 9 models)  signed in
+```
+
+结论：**一张卡、一个 provider、9 个模型、ACP 仍处登录态**（把本地路径 spec 换成 `github:` 后凭证未丢失，无需重新 login）。
+
+### 12.4 12/1 之后回贴双入口
+
+把下面这段追加到 `plugins.json` 的 `plugins` 数组末尾（顺序无关）：
+
+```json
+{ "spec": "github:zhuangzm/magpie-mistral-pool",
+  "options": { "engine": "direct", "providerId": "mistral-vibe-api",
+               "proxyUrl": "http://127.0.0.1:7890", "includeApiSurface": false } }
+```
+
+回贴后三步：
+
+1. 重启 Magpie（宿主只监听 `127.0.0.1:3425`、无 HTTP reload 入口，靠 `plugins.json` mtime 触发 reload），清掉 UI 缓存的旧 provider 对象
+2. 设置面板给 `mistral-vibe-api` 填同一把 key，或 `magpie plugin login mistral-vibe-api`
+3. 复核：`& "D:\Program Files\magpie\magpie-windows-amd64.exe" plugin list 2>&1 | Out-String -Width 200`
+
+### 12.5 回贴后的预期现象
+
+- 仍会出现**两张同名卡**，且每张卡下带重复的 `also signed in to by ; this one serves it` 行——宿主按包名聚合 provider 的预期行为，不是加载错误。
+- 若想单卡又想区分 provider 显示名，用 `options.providerName`（只改 Provider 视图的名，不改卡片标题）。
+- 红线：**2026-12-01 08:00 CST（UTC 00:00）前**，`mistral-vibe-api` 只做静态加载与面板展示，绝不进任何路由组（`$30` 池已耗尽，进组即 402）。
