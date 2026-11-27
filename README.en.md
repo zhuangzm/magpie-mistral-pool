@@ -1,6 +1,6 @@
 # magpie-mistral-pool
 
-[![CI](https://github.com/weijianping/magpie-mistral-pool/actions/workflows/ci.yml/badge.svg)](https://github.com/weijianping/magpie-mistral-pool/actions/workflows/ci.yml)
+[![CI](https://github.com/zhuangzm/magpie-mistral-pool/actions/workflows/ci.yml/badge.svg)](https://github.com/zhuangzm/magpie-mistral-pool/actions/workflows/ci.yml)
 
 **[中文 → README.md](README.md)**
 
@@ -29,9 +29,9 @@ credential or a config slot:
 
 ```jsonc
 [
-  { "spec": "github:weijianping/magpie-mistral-pool",
+  { "spec": "github:zhuangzm/magpie-mistral-pool",
     "options": { "engine": "acp", "proxyUrl": "http://127.0.0.1:7890" } },
-  { "spec": "github:weijianping/magpie-mistral-pool",
+  { "spec": "github:zhuangzm/magpie-mistral-pool",
     "options": { "engine": "direct", "providerId": "mistral-vibe-api",
                  "proxyUrl": "http://127.0.0.1:7890" } }
 ]
@@ -46,7 +46,7 @@ Pick one:
 
 ```sh
 # 1) GitHub
-magpie plugin add github:weijianping/magpie-mistral-pool
+magpie plugin add github:zhuangzm/magpie-mistral-pool
 
 # 2) local folder (when editing the code)
 magpie plugin add <path-to-this-repo>
@@ -74,7 +74,7 @@ Select it in `plugins.json`:
 
 ```jsonc
 {
-  "spec": "github:weijianping/magpie-mistral-pool",
+  "spec": "github:zhuangzm/magpie-mistral-pool",
   "options": {
     "engine": "acp",
     "proxyUrl": "http://127.0.0.1:7890"

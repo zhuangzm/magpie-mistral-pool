@@ -15,9 +15,9 @@
 
 ## 1. 推到 GitHub
 
-仓库名与作者已写进 `package.json`（`weijianping/magpie-mistral-pool`），远端 `origin` 也已配好。只差在 GitHub 上建一个空仓库：
+仓库名与作者已写进 `package.json`（`zhuangzm/magpie-mistral-pool`），远端 `origin` 也已配好。只差在 GitHub 上建一个空仓库：
 
-1. 打开 <https://github.com/new>，Owner 选 `weijianping`，Name 填 `magpie-mistral-pool`，可见性 **Public**。
+1. 打开 <https://github.com/new>，Owner 选 `zhuangzm`，Name 填 `magpie-mistral-pool`，可见性 **Public**。
 2. **不要**勾选 Add a README / .gitignore / license —— 本地已有，勾了会造出一次无谓的合并。
 3. 建完直接推：
 
@@ -26,7 +26,7 @@ cd D:\workspaceAI\magpie-mistral-pool
 git push -u origin master
 ```
 
-本机没有 `gh` CLI，也没有 `GITHUB_TOKEN`，第一次推会由 Git Credential Manager 弹浏览器登录，那是预期行为。若想走 token，用 `git push https://<token>@github.com/weijianping/magpie-mistral-pool.git master`，但别把带 token 的 URL 留在 `git remote -v` 里。
+本机没有 `gh` CLI，也没有 `GITHUB_TOKEN`，第一次推会由 Git Credential Manager 弹浏览器登录，那是预期行为。若想走 token，用 `git push https://<token>@github.com/zhuangzm/magpie-mistral-pool.git master`，但别把带 token 的 URL 留在 `git remote -v` 里。
 
 **必须 Public**：Magpie 的 `github:owner/repo` spec 是匿名拉取的，私有仓库装不上。
 
@@ -47,7 +47,7 @@ git push origin v0.1.0
 ## 3. 装进 Magpie（最小路径，不依赖 npm）
 
 ```powershell
-magpie plugin add github:weijianping/magpie-mistral-pool
+magpie plugin add github:zhuangzm/magpie-mistral-pool
 magpie plugin login mistral-vibe
 magpie plugin
 ```
@@ -96,7 +96,7 @@ Discover 页读的是社区市场仓 `D:\workspaceAI\plugins` 的 `dist` 分支�
 | 声明的入口文件在仓库里真实存在 | `scripts/tagged-kind.mjs` 的 `entryOf` | `main: ./index.mjs` ✅ |
 | 未归档、非 fork、owner 不是 `magpie-community` | `scripts/tagged.mjs:137` | ✅ |
 
-收录后的装法就是第 3 步那条 `magpie plugin add github:weijianping/magpie-mistral-pool`。市场里既有先例都这么发：`packages/type4me/README.md` 明写「Until it is on npm, install it from GitHub」，`company-guard`、`agentcompass` 同样以 `github:owner/repo` 分发。
+收录后的装法就是第 3 步那条 `magpie plugin add github:zhuangzm/magpie-mistral-pool`。市场里既有先例都这么发：`packages/type4me/README.md` 明写「Until it is on npm, install it from GitHub」，`company-guard`、`agentcompass` 同样以 `github:owner/repo` 分发。
 
 不想等 cron：去 `D:\workspaceAI\plugins` 的 Actions 对 `tagged` 点一次 **Run workflow**。
 

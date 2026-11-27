@@ -1,6 +1,6 @@
 # magpie-mistral-pool
 
-[![CI](https://github.com/weijianping/magpie-mistral-pool/actions/workflows/ci.yml/badge.svg)](https://github.com/weijianping/magpie-mistral-pool/actions/workflows/ci.yml)
+[![CI](https://github.com/zhuangzm/magpie-mistral-pool/actions/workflows/ci.yml/badge.svg)](https://github.com/zhuangzm/magpie-mistral-pool/actions/workflows/ci.yml)
 
 **[English → README.en.md](README.en.md)**
 
@@ -25,9 +25,9 @@ Provider id：`mistral-vibe`，与 Magpie 内置的 `mistral` API key provider �
 
 ```jsonc
 [
-  { "spec": "github:weijianping/magpie-mistral-pool",
+  { "spec": "github:zhuangzm/magpie-mistral-pool",
     "options": { "engine": "acp" } },
-  { "spec": "github:weijianping/magpie-mistral-pool",
+  { "spec": "github:zhuangzm/magpie-mistral-pool",
     "options": { "engine": "direct", "providerId": "mistral-vibe-api" } }
 ]
 ```
@@ -42,7 +42,7 @@ Provider id：`mistral-vibe`，与 Magpie 内置的 `mistral` API key provider �
 
 ```sh
 # 1) GitHub
-magpie plugin add github:weijianping/magpie-mistral-pool
+magpie plugin add github:zhuangzm/magpie-mistral-pool
 
 # 2) 本地目录（改代码时用）
 magpie plugin add <本仓库路径>
@@ -70,7 +70,7 @@ vibe-acp --version
 
 ```jsonc
 {
-  "spec": "github:weijianping/magpie-mistral-pool",
+  "spec": "github:zhuangzm/magpie-mistral-pool",
   "options": { "engine": "acp", "proxyUrl": "http://127.0.0.1:7890" }
 }
 ```

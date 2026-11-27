@@ -22,14 +22,14 @@
     "acp"
   ],
   "license": "MIT",
-  "author": "weijianping",
+  "author": "zhuangzm",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/weijianping/magpie-mistral-pool.git"
+    "url": "git+https://github.com/zhuangzm/magpie-mistral-pool.git"
   },
-  "homepage": "https://github.com/weijianping/magpie-mistral-pool#readme",
+  "homepage": "https://github.com/zhuangzm/magpie-mistral-pool#readme",
   "bugs": {
-    "url": "https://github.com/weijianping/magpie-mistral-pool/issues"
+    "url": "https://github.com/zhuangzm/magpie-mistral-pool/issues"
   },
   "engines": {
     "node": ">=20"
