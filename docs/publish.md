@@ -7,42 +7,47 @@
 | 项 | 值 |
 | --- | --- |
 | 代码仓库 | `D:\workspaceAI\magpie-mistral-pool`，分支 `main` |
-| npm 名 | `@solary/magpie-mistral-pool`，版本 `0.1.0` |
+| 远端 | <https://github.com/zhuangzm/magpie-mistral-pool>，**Public**，默认分支 `main`，topic `magpie-plugin` |
+| npm 名 | `@solary/magpie-mistral-pool`，版本 `0.1.0`（尚未发布） |
 | Magpie 插件名 | `Mistral Vibe (honest)`；provider `mistral-vibe`（第二条入口 `mistral-vibe-api`） |
-| 已就绪 | 中英双 README（`README.md` / `README.en.md`）、MIT LICENSE、`magpie.*` 元数据、CI（ubuntu/windows/macos × node 20/22/24） |
-| 已验证 | `node --test` 61/61；`npm pack --dry-run` 15 文件 / 46 kB，不含 `docs/`、`test/`、`fixtures/`、实验 JSON |
-| 未就绪 | 远端仓库、tag、Discover 收录（靠 Public 仓 + topic，约 30 分钟）、npm 发布（可选） |
+| 已就绪 | 中英双 README（`README.md` / `README.en.md`）、MIT LICENSE、`magpie.*` 元数据、CI（ubuntu/windows/macos × node 20/22/24）、tag `v0.1.0`、Release `v0.1.0` |
+| 已验证 | `node --test` 61/61；`npm pack --dry-run` 15 文件 / 46 kB，不含 `docs/`、`test/`、`fixtures/`、实验 JSON；CI 在 `b078464` / `4cbffe7` / `346b793` 三次全绿 |
+| 待完成 | Discover 收录（topic 已加，等 `tagged` cron 下一次跑到）、真机 `plugin add github:` 验证、npm 发布（可选） |
 
-## 1. 推到 GitHub
+## 1. 推到 GitHub（已完成）
 
-仓库名与作者已写进 `package.json`（`zhuangzm/magpie-mistral-pool`），远端 `origin` 也已配好。只差在 GitHub 上建一个空仓库：
-
-1. 打开 <https://github.com/new>，Owner 选 `zhuangzm`，Name 填 `magpie-mistral-pool`，可见性 **Public**。
-2. **不要**勾选 Add a README / .gitignore / license —— 本地已有，勾了会造出一次无谓的合并。
-3. 建完直接推：
+仓库已上线：<https://github.com/zhuangzm/magpie-mistral-pool>，**Public**，默认分支 `main`，`HEAD` 与 `origin/main` 同步。命令留档如下，重建时照抄：
 
 ```powershell
 cd D:\workspaceAI\magpie-mistral-pool
+git remote add origin https://github.com/zhuangzm/magpie-mistral-pool.git
+git branch -M main
 git push -u origin main
 ```
 
-本机没有 `gh` CLI，也没有 `GITHUB_TOKEN`，第一次推会由 Git Credential Manager 弹浏览器登录，那是预期行为。若想走 token，用 `git push https://<token>@github.com/zhuangzm/magpie-mistral-pool.git main`，但别把带 token 的 URL 留在 `git remote -v` 里。
+首次推送由 Git Credential Manager 弹浏览器登录，token 已缓存，后续推送不再打扰。想显式走 token 就用 `git push https://<token>@github.com/zhuangzm/magpie-mistral-pool.git main`，但别把带 token 的 URL 留在 `git remote -v` 里。
 
 **必须 Public**：Magpie 的 `github:owner/repo` spec 是匿名拉取的，私有仓库装不上。
 
-推完检查两件事：
+验证现状（只读，安全）：
 
-- Actions 里 CI 首跑全绿（3 平台 × 3 个 node 版本，约 2 分钟）；
-- 仓库首页的 CI 徽章转绿（徽章 URL 已指向这个仓库，地址不对就会一直是灰的）。
+```powershell
+git status --short --branch
+git rev-parse HEAD; git rev-parse origin/main
+```
 
-## 2. 打 tag 与 Release
+两行 `rev-parse` 输出相同即本地与远端一致。CI 在 `b078464` / `4cbffe7` / `346b793` 三次全绿（3 平台 × node 20/22/24），仓库首页徽章为绿色。
+
+## 2. 打 tag 与 Release（已完成）
+
+tag `v0.1.0`（annotated）已指向 `346b793` 并推上远端，Release `v0.1.0` 已发布，正文取自 `docs/release-notes-v0.1.0.md`。重打时照抄：
 
 ```powershell
 git tag -a v0.1.0 -m "0.1.0: honest direct engine + ACP engine"
 git push origin v0.1.0
 ```
 
-然后在 GitHub → Releases → Draft a new release 选 `v0.1.0`，摘要可以直接抄 README 开头两段，附上「两个引擎扣哪本账」那张表。
+随后在 GitHub → Releases → Draft a new release 选 `v0.1.0`，正文直接粘 `docs/release-notes-v0.1.0.md`（含「两个引擎扣哪本账」那张表）。
 
 ## 3. 装进 Magpie（最小路径，不依赖 npm）
 
