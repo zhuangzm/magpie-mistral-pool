@@ -13,6 +13,25 @@ allowance pools in the usage card.
 Provider id: `mistral-vibe`. It is separate from Magpie's built-in `mistral`
 API-key provider.
 
+Two entries of this plugin can be loaded side by side — for example ACP on the
+`$300` pool as the main route and direct on the `$30` pool as a fallback.
+Give the second entry its own `options.providerId`; the id is what the host
+keys auth, config and the provider registry by, so the two never share a
+credential or a config slot:
+
+```jsonc
+[
+  { "spec": "D:\\workspaceAI\\magpie-mistral-pool",
+    "options": { "engine": "acp", "proxyUrl": "http://127.0.0.1:7890" } },
+  { "spec": "D:\\workspaceAI\\magpie-mistral-pool",
+    "options": { "engine": "direct", "providerId": "mistral-vibe-api",
+                 "proxyUrl": "http://127.0.0.1:7890" } }
+]
+```
+
+The derived provider is named **Mistral Vibe (API)**. A blank `providerId`
+falls back to `mistral-vibe`.
+
 ## Install
 
 ```sh
@@ -42,8 +61,8 @@ Select it in `plugins.json`:
 ```
 
 The provider is then named **Mistral Vibe (ACP · $300)**. Reload the plugin
-host (or restart Magpie) after changing `engine`; the old provider object can
-stay cached in a running UI.
+host (or restart Magpie) after changing `engine` or `providerId`; the old
+provider object can stay cached in a running UI.
 
 How the bridge works:
 

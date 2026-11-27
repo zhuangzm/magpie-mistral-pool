@@ -122,6 +122,49 @@ test('chat.headers writes affinity only for this provider and only with a sessio
   assert.deepEqual(noSession.headers, {})
 })
 
+test('options.providerId derives a second provider id for a side-by-side entry', async () => {
+  const state = mockServer()
+  const hooks = await server({}, optionsFor(state, { engine: 'direct', providerId: 'mistral-vibe-api' }))
+  const cfg = { provider: {} }
+  await hooks.config(cfg)
+  const provider = cfg.provider['mistral-vibe-api']
+  assert.equal(provider.name, 'Mistral Vibe (API)')
+  assert.equal(provider.npm, '@ai-sdk/openai-compatible')
+  assert.equal(provider.api, 'http://mock.local/v1')
+  assert.ok(provider.models['mistral-medium-latest'])
+  assert.equal(cfg.provider['mistral-vibe'], undefined)
+  assert.equal(cfg.provider.mistral, undefined)
+
+  assert.equal(hooks.provider.id, 'mistral-vibe-api')
+  assert.equal(hooks.auth.provider, 'mistral-vibe-api')
+
+  const own = { headers: {} }
+  await hooks['chat.headers']({ model: { providerID: 'mistral-vibe-api' }, sessionID: 's-1' }, own)
+  assert.deepEqual(own.headers, { 'x-affinity': 's-1', 'x-session-id': 's-1' })
+
+  const ownPlugin = { headers: {} }
+  await hooks['chat.headers']({ model: { providerID: 'mistral-vibe-api-plugin' }, sessionID: 's-1' }, ownPlugin)
+  assert.deepEqual(ownPlugin.headers, { 'x-affinity': 's-1', 'x-session-id': 's-1' })
+
+  const legacy = { headers: {} }
+  await hooks['chat.headers']({ model: { providerID: 'mistral-vibe' }, sessionID: 's-1' }, legacy)
+  assert.deepEqual(legacy.headers, {})
+
+  const builtin = { headers: {} }
+  await hooks['chat.headers']({ model: { providerID: 'mistral' }, sessionID: 's-1' }, builtin)
+  assert.deepEqual(builtin.headers, {})
+})
+
+test('a blank options.providerId still declares mistral-vibe', async () => {
+  const hooks = await server({}, { providerId: '   ' })
+  const cfg = {}
+  await hooks.config(cfg)
+  assert.equal(cfg.provider['mistral-vibe'].name, 'Mistral Vibe')
+  assert.equal(cfg.provider['mistral-vibe-api'], undefined)
+  assert.equal(hooks.provider.id, 'mistral-vibe')
+  assert.equal(hooks.auth.provider, 'mistral-vibe')
+})
+
 test('provider.models keeps a Vibe key on the Vibe surface', async () => {
   const state = mockServer()
   const hooks = await server({}, optionsFor(state))

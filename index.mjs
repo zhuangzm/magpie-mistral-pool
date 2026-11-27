@@ -317,9 +317,13 @@ export async function server(input = {}, options = {}) {
   const baseUrl = baseUrlOf(options)
   const consoleBase = options.consoleBase ?? DEFAULT_CONSOLE_BASE
   const engine = options.engine === 'acp' ? 'acp' : 'direct'
+  // Two entries of this plugin can be loaded side by side (one ACP, one
+  // direct) as long as each names its own provider id. The id is what the
+  // host keys authentication, config and the provider registry by.
+  const providerId = String(options.providerId ?? '').trim() || PROVIDER
   const log = (level, message) => {
     try {
-      Promise.resolve(input?.client?.app?.log?.({ body: { service: PROVIDER, level, message } })).catch(() => {})
+      Promise.resolve(input?.client?.app?.log?.({ body: { service: providerId, level, message } })).catch(() => {})
     } catch {}
     try {
       options.log?.(level, message)
@@ -393,10 +397,15 @@ export async function server(input = {}, options = {}) {
   return {
     async config(cfg) {
       cfg.provider ??= {}
-      const was = cfg.provider[PROVIDER] ?? {}
-      cfg.provider[PROVIDER] = {
+      const was = cfg.provider[providerId] ?? {}
+      cfg.provider[providerId] = {
         ...was,
-        name: engine === 'acp' ? 'Mistral Vibe (ACP · $300)' : 'Mistral Vibe',
+        name:
+          engine === 'acp'
+            ? 'Mistral Vibe (ACP · $300)'
+            : providerId === PROVIDER
+              ? 'Mistral Vibe'
+              : 'Mistral Vibe (API)',
         npm: '@ai-sdk/openai-compatible',
         api: baseUrl,
         models: was.models ?? cloneStaticModels(),
@@ -404,7 +413,7 @@ export async function server(input = {}, options = {}) {
     },
 
     auth: {
-      provider: PROVIDER,
+      provider: providerId,
 
       methods: [
         {
@@ -579,7 +588,7 @@ export async function server(input = {}, options = {}) {
     },
 
     provider: {
-      id: PROVIDER,
+      id: providerId,
       async models(provider, { auth } = {}) {
         const key = keyOf(auth)
         if (!key) return provider?.models ?? cloneStaticModels()
@@ -590,7 +599,7 @@ export async function server(input = {}, options = {}) {
 
     async 'chat.headers'(chatInput, output) {
       const providerID = chatInput?.model?.providerID
-      if (![PROVIDER, `${PROVIDER}-plugin`].includes(providerID)) return
+      if (![providerId, `${providerId}-plugin`].includes(providerID)) return
       if (!chatInput?.sessionID) return
       output.headers['x-affinity'] = chatInput.sessionID
       output.headers['x-session-id'] = chatInput.sessionID
