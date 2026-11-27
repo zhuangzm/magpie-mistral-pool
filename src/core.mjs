@@ -96,15 +96,22 @@ export function sanitizeHeaders(incoming, options = {}) {
 
 /** True when a JSON body asks for a streamed completion. */
 export function isStreamBody(body) {
-  if (typeof body === 'string') return /"stream"\s*:\s*true/.test(body)
-  if (body instanceof Uint8Array || body instanceof ArrayBuffer) {
+  let text = ''
+  if (typeof body === 'string') {
+    text = body
+  } else if (body instanceof Uint8Array || body instanceof ArrayBuffer) {
     try {
-      return /"stream"\s*:\s*true/.test(new TextDecoder().decode(body))
+      text = new TextDecoder().decode(body)
     } catch {
       return false
     }
   }
-  return false
+  if (!text || !/"stream"\s*:\s*true/.test(text)) return false
+  try {
+    return JSON.parse(text)?.stream === true
+  } catch {
+    return true
+  }
 }
 
 // USD per 1M tokens, standard tier. Medium 3.5 and the vibe-cli aliases have
@@ -378,7 +385,10 @@ export async function identifyKey(key, options = {}) {
       headers: sanitizeHeaders(null, { key, userAgent: options.userAgent }),
       signal: AbortSignal.timeout(options.timeoutMs ?? 5_000),
     })
-    if (!response.ok) return { keyType: 'unknown', status: response.status }
+    if (!response.ok) {
+      await response.body?.cancel?.().catch?.(() => {})
+      return { keyType: 'unknown', status: response.status }
+    }
     const data = await response.json().catch(() => ({}))
     const planType = typeof data?.plan_type === 'string' ? data.plan_type : undefined
     return {

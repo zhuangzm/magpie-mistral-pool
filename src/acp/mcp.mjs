@@ -227,7 +227,7 @@ export class McpBridge {
 
     let ticks = 0
     const keepAlive = setInterval(() => {
-      if (res.writableEnded) return
+      if (res.writableEnded || res.destroyed) return
       ticks += 1
       res.write(': keepalive\n\n')
       if (typeof progressToken === 'string' || typeof progressToken === 'number') {

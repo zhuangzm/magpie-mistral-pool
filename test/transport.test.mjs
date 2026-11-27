@@ -217,3 +217,20 @@ test('NODE_USE_ENV_PROXY selects a ProxyAgent from the environment', async () =>
   assert.equal(seen[0].options.uri, 'http://127.0.0.1:7890')
   assert.equal(seen[0].options.headersTimeout, 0)
 })
+
+test('a pre-aborted caller signal rejects before calling fetchImpl', async () => {
+  let called = false
+  const transport = createTransport({
+    fetchImpl: async () => {
+      called = true
+      return new Response('ok')
+    },
+  })
+  const controller = new AbortController()
+  controller.abort(new DOMException('already stopped', 'AbortError'))
+  await assert.rejects(
+    transport.fetch('http://mock', { signal: controller.signal }),
+    (error) => error.name === 'AbortError' && error.message === 'already stopped',
+  )
+  assert.equal(called, false)
+})

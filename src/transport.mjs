@@ -136,15 +136,15 @@ export function createTransport({
         return await fetchOnce(impl, dispatcher, url, init, {
           firstOutputMs,
           idleMs,
-          logger,
           proxy: bun ? proxy : undefined,
         })
       } catch (error) {
         const retryable = error?.code === 'TRANSPORT_RESET' || error?.code === 'TRANSPORT_NETWORK'
-        if (!retryable || attempt >= maxRetriesBeforeFirstByte || init?.signal?.aborted) throw error
+        const streamBody = init?.body && typeof init.body === 'object' && typeof init.body.getReader === 'function'
+        if (!retryable || streamBody || attempt >= maxRetriesBeforeFirstByte || init?.signal?.aborted) throw error
         attempt += 1
         logger?.('warn', `retrying request after ${error.code} (${attempt}/${maxRetriesBeforeFirstByte})`)
-        await new Promise((resolve) => setTimeout(resolve, Math.min(250 * attempt, 1_000)))
+        await sleepWithSignal(Math.min(250 * attempt, 1_000), init?.signal)
       }
     }
   }
@@ -152,8 +152,27 @@ export function createTransport({
   return { fetch }
 }
 
+function sleepWithSignal(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+      return
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 async function fetchOnce(impl, dispatcher, url, init, { firstOutputMs, idleMs, proxy }) {
   const caller = init?.signal
+  if (caller?.aborted) throw caller.reason ?? new DOMException('Aborted', 'AbortError')
   const controller = new AbortController()
   let timedOut = null
 
@@ -161,8 +180,7 @@ async function fetchOnce(impl, dispatcher, url, init, { firstOutputMs, idleMs, p
     controller.abort(caller?.reason ?? new DOMException('Aborted', 'AbortError'))
   }
   if (caller) {
-    if (caller.aborted) onCallerAbort()
-    else caller.addEventListener('abort', onCallerAbort, { once: true })
+    caller.addEventListener('abort', onCallerAbort, { once: true })
   }
   const cleanup = () => {
     if (caller) caller.removeEventListener('abort', onCallerAbort)

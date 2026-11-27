@@ -227,7 +227,10 @@ async function whoamiOf(ctx, key) {
     headers: signInHeaders(ctx, { authorization: `Bearer ${key}` }),
     signal: AbortSignal.timeout(8_000),
   })
-  if (!response.ok) return null
+  if (!response.ok) {
+    await response.body?.cancel?.().catch?.(() => {})
+    return null
+  }
   return await response.json().catch(() => null)
 }
 
@@ -367,7 +370,11 @@ export async function server(input = {}, options = {}) {
       userAgent: options.userAgent,
       timeoutMs: options.whoamiTimeoutMs,
     })
-    keyTypes.set(key, { value, until: now + KEY_TYPE_TTL_MS })
+    const retryTtl = Number.isFinite(Number(options.whoamiRetryMs)) && Number(options.whoamiRetryMs) >= 0
+      ? Number(options.whoamiRetryMs)
+      : 15_000
+    const ttl = value.status ? KEY_TYPE_TTL_MS : retryTtl
+    keyTypes.set(key, { value, until: now + ttl })
     if (keyTypes.size > 32) keyTypes.delete(keyTypes.keys().next().value)
     return value
   }
@@ -381,13 +388,26 @@ export async function server(input = {}, options = {}) {
   })
 
   const acpBridges = new Map()
+  const maxBridges = Number(options.maxBridges) > 0 ? Number(options.maxBridges) : 4
+  const isBridgeBusy = (bridge) =>
+    bridge.stats.activeRequests > 0
+    || [...bridge.conversations.values()].some((conv) =>
+      conv.turn?.pendingCalls.size > 0
+      || (conv.turn && !conv.turn.settled && !conv.turn.finished))
   const acpFor = (key) => {
     const existing = acpBridges.get(key)
-    if (existing) return existing
-    if (acpBridges.size >= 2) {
-      const oldest = acpBridges.keys().next().value
-      acpBridges.get(oldest)?.dispose?.().catch?.(() => {})
-      acpBridges.delete(oldest)
+    if (existing) {
+      acpBridges.delete(key)
+      acpBridges.set(key, existing)
+      return existing
+    }
+    if (acpBridges.size >= maxBridges) {
+      for (const [candidateKey, candidate] of acpBridges) {
+        if (isBridgeBusy(candidate)) continue
+        candidate.dispose?.().catch?.(() => {})
+        acpBridges.delete(candidateKey)
+        if (acpBridges.size < maxBridges) break
+      }
     }
     const bridge = createAcpBridge({ apiKey: key, options, log })
     acpBridges.set(key, bridge)
@@ -401,11 +421,12 @@ export async function server(input = {}, options = {}) {
       cfg.provider[providerId] = {
         ...was,
         name:
-          engine === 'acp'
-            ? 'Mistral Vibe (ACP · $300)'
+          options.providerName
+          || (engine === 'acp'
+            ? (providerId === PROVIDER ? 'Mistral Vibe (ACP · $300)' : `Mistral Vibe (ACP · ${providerId})`)
             : providerId === PROVIDER
               ? 'Mistral Vibe'
-              : 'Mistral Vibe (API)',
+              : 'Mistral Vibe (API)'),
         npm: '@ai-sdk/openai-compatible',
         api: baseUrl,
         models: was.models ?? cloneStaticModels(),

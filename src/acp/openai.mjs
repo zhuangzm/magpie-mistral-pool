@@ -65,7 +65,7 @@ export function textOf(content) {
     return content.map((part) => {
       if (typeof part === 'string') return part
       if (part?.type === 'text') return String(part.text ?? '')
-      if (part?.type === 'image') return '[image]'
+      if (part?.type === 'image' || part?.type === 'image_url') return '[image]'
       return ''
     }).join('')
   }
@@ -76,14 +76,22 @@ export function textOf(content) {
   }
 }
 
-function imageParts(content) {
+export function imageParts(content) {
   if (!Array.isArray(content)) return []
   const out = []
   for (const part of content) {
-    if (part?.type !== 'image') continue
-    const url = part?.image_url?.url ?? part?.url ?? ''
+    if (part?.type !== 'image' && part?.type !== 'image_url') continue
+    const url = typeof part?.image_url === 'string' ? part.image_url : (part?.image_url?.url ?? part?.url ?? '')
     const match = /^data:([^;,]+);base64,(.+)$/is.exec(String(url))
     if (match) out.push({ type: 'image', mimeType: match[1], data: match[2] })
+  }
+  return out
+}
+
+export function promptImages(messages) {
+  const out = []
+  for (const message of messages ?? []) {
+    if (message?.role === 'user') out.push(...imageParts(message.content))
   }
   return out
 }

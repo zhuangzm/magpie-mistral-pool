@@ -3,3 +3,4 @@ billing-probe-*.json
 1201-billing*.json
 plugin-list*.json
 *.log
+.tmp-shot*.png

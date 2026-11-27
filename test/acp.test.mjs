@@ -212,3 +212,81 @@ test('ACP truncates an oversized tool result before replaying it', async () => {
     await acp.dispose()
   }
 })
+
+test('ACP forwards OpenAI image_url parts as image prompt blocks', async () => {
+  const acp = bridge()
+  try {
+    const res = await acp.fetch('https://api.mistral.ai/v1/chat/completions', request({
+      session: 'image-1',
+      payload: payload({
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: 'describe' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+          ],
+        }],
+      }),
+    }))
+    assert.equal(res.status, 200)
+    const text = await res.text()
+    assert.match(text, /\[image\]/)
+  } finally {
+    await acp.dispose()
+  }
+})
+
+test('ACP mutex recovers when a queued request aborts while waiting for the lock', async () => {
+  const acp = bridge({ relayAfterMs: 30_000 })
+  try {
+    const tool = {
+      type: 'function',
+      function: {
+        name: 'read',
+        description: 'Read a file',
+        parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+      },
+    }
+    const res1 = await acp.fetch('https://api.mistral.ai/v1/chat/completions', request({
+      session: 'mutex-1',
+      payload: payload({ messages: [{ role: 'user', content: 'TRIGGER_TOOL' }], tools: [tool] }),
+    }))
+    const text1 = await res1.text()
+    const id = /"tool_calls":\[\{"index":0,"id":"(call_[^"]+)"/.exec(text1)?.[1]
+    assert.ok(id, text1)
+
+    const second = payload({
+      messages: [
+        { role: 'user', content: 'TRIGGER_TOOL' },
+        { role: 'assistant', content: null, tool_calls: [{ id, type: 'function', function: { name: 'read', arguments: '{"path":"a.txt"}' } }] },
+        { role: 'tool', tool_call_id: id, content: 'DONE' },
+      ],
+      tools: [tool],
+    })
+    const res2 = await acp.fetch('https://api.mistral.ai/v1/chat/completions', request({ session: 'mutex-1', payload: second }))
+    const reader2 = res2.body.getReader()
+
+    // Queue a third request while res2 stream is still holding the lock, then abort it.
+    const abortCtl = new AbortController()
+    const queued = acp.fetch('https://api.mistral.ai/v1/chat/completions', {
+      ...request({ session: 'mutex-1', payload: payload() }),
+      signal: abortCtl.signal,
+    })
+    setTimeout(() => abortCtl.abort(new DOMException('cancelled waiter', 'AbortError')), 20)
+    await assert.rejects(queued, (error) => error?.code === 'ABORTED')
+
+    // Drain res2 so it releases the lock.
+    while (!(await reader2.read()).done) {}
+
+    // A subsequent request on the same session must acquire the lock immediately and succeed.
+    const res4 = await acp.fetch('https://api.mistral.ai/v1/chat/completions', request({
+      session: 'mutex-1',
+      payload: payload({ messages: [{ role: 'user', content: 'after abort' }] }),
+    }))
+    assert.equal(res4.status, 200)
+    assert.match(await res4.text(), /ok:turn=/)
+    assert.equal(acp.stats.activeRequests, 0)
+  } finally {
+    await acp.dispose()
+  }
+})

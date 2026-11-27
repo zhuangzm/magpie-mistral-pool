@@ -59,7 +59,7 @@ export function budgetToWindows(budget, counting = 'vibe_budget') {
       amount,
       unit: currency,
       span: resetSpan(pool.reset_at) ?? 30 * 86_400,
-      display: `${money(amount, currency)} / ${money(limit, currency)}`,
+      display: limit > 0 ? `${money(amount, currency)} / ${money(limit, currency)}` : `${used.toFixed(1)}%`,
     }
     if (Number.isFinite(resetsAt)) window.resetsAt = resetsAt
     if (pool.payg_enabled !== undefined) window.payg_enabled = pool.payg_enabled
@@ -117,5 +117,18 @@ export function usageFromBilling(billing, info = {}) {
   const out = { windows }
   if (plan) out.plan = plan
   if (payg !== undefined) out.payg = payg
+
+  const subStatus = billing?.subscriptionStatus
+  const budStatus = billing?.budgetStatus
+  if (!billing?.subscription && !billing?.budget) {
+    if (subStatus === 401 || budStatus === 401) {
+      out.error = 'Mistral rejected the key (401); sign in again'
+      out.signIn = 'expired'
+    } else if (subStatus === 0 && budStatus === 0) {
+      out.error = 'Mistral billing endpoints unreachable'
+    } else if ((subStatus === 0 || subStatus >= 400) && (budStatus === 0 || budStatus >= 400)) {
+      out.error = `Mistral billing read failed (subscription=${subStatus}, budget=${budStatus})`
+    }
+  }
   return out
 }

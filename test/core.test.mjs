@@ -75,6 +75,7 @@ test('sanitizeHeaders picks accept from the body', () => {
   assert.equal(sanitizeHeaders({ accept: 'application/x-test' }, {}).get('accept'), 'application/x-test')
   assert.equal(isStreamBody('{"model":"m","stream":true}'), true)
   assert.equal(isStreamBody('{"model":"m","stream":false}'), false)
+  assert.equal(isStreamBody(JSON.stringify({ model: 'm', messages: [{ role: 'user', content: '{"stream": true}' }], stream: false })), false)
 })
 
 test('originOf strips the version segment, whoami never lands on /v1/api', () => {

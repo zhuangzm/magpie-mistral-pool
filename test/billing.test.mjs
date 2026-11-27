@@ -96,3 +96,28 @@ test('resetSpan parses ISO dates and rejects nonsense', () => {
   assert.equal(resetSpan(new Date(Date.now() - 1_000).toISOString()), undefined)
   assert.equal(resetSpan(undefined), undefined)
 })
+
+test('usageFromBilling reports 401 expiry and unreachable endpoints', () => {
+  const expired = usageFromBilling(
+    { subscription: null, budget: null, subscriptionStatus: 401, budgetStatus: 401 },
+    { keyType: 'unknown' },
+  )
+  assert.deepEqual(expired.windows, [])
+  assert.equal(expired.signIn, 'expired')
+  assert.match(expired.error, /401/)
+
+  const offline = usageFromBilling(
+    { subscription: null, budget: null, subscriptionStatus: 0, budgetStatus: 0 },
+    { keyType: 'unknown' },
+  )
+  assert.deepEqual(offline.windows, [])
+  assert.equal(offline.signIn, undefined)
+  assert.match(offline.error, /unreachable/)
+
+  const mixed = usageFromBilling(
+    { subscription: null, budget: null, subscriptionStatus: 0, budgetStatus: 502 },
+    { keyType: 'unknown' },
+  )
+  assert.deepEqual(mixed.windows, [])
+  assert.match(mixed.error, /subscription=0, budget=502/)
+})

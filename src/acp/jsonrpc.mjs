@@ -162,12 +162,18 @@ export class JsonRpcPeer {
     if (message.id !== undefined) {
       Promise.resolve()
         .then(() => this.handlers.onRequest?.(message.method, message.params))
-        .then((result) => this.#write({ jsonrpc: '2.0', id: message.id, result }))
-        .catch((error) => this.#write({
-          jsonrpc: '2.0',
-          id: message.id,
-          error: { code: error?.code ?? -32603, message: error?.message ?? String(error) },
-        }))
+        .then((result) => {
+          if (this.closed === undefined) this.#write({ jsonrpc: '2.0', id: message.id, result })
+        })
+        .catch((error) => {
+          if (this.closed === undefined) {
+            this.#write({
+              jsonrpc: '2.0',
+              id: message.id,
+              error: { code: error?.code ?? -32603, message: error?.message ?? String(error) },
+            })
+          }
+        })
       return
     }
     this.handlers.onNotification?.(message.method, message.params)

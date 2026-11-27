@@ -350,3 +350,31 @@ test('createAcpFetch routes chat to ACP, other URLs to the direct fetch, and kee
   assert.match(await response.text(), /API budget exhausted/)
   assert.ok(seen.includes('https://api.mistral.ai/v1/chat/completions'))
 })
+
+test('provider.models recovers quickly after a transient whoami failure', async () => {
+  let whoamiCalls = 0
+  const base = mockServer({ planType: 'API' })
+  const fetchImpl = async (input, init) => {
+    const url = new URL(typeof Request !== 'undefined' && input instanceof Request ? input.url : String(input))
+    if (url.pathname === '/api/vibe/whoami') {
+      whoamiCalls += 1
+      if (whoamiCalls === 1) throw new Error('proxy starting')
+    }
+    return base.fetchImpl(input, init)
+  }
+  const hooks = await server({}, { ...optionsFor(base, { includeApiSurface: true, whoamiRetryMs: 0 }), fetch: fetchImpl })
+  const first = await hooks.provider.models({ models: {} }, { auth: { key: KEY } })
+  assert.equal(first['codestral-latest'], undefined)
+  assert.equal(whoamiCalls, 1)
+
+  const second = await hooks.provider.models({ models: {} }, { auth: { key: KEY } })
+  assert.ok(second['codestral-latest'])
+  assert.equal(whoamiCalls, 2)
+})
+
+test('a second ACP entry with a custom providerId gets a distinct name', async () => {
+  const hooks = await server({}, { engine: 'acp', providerId: 'mistral-vibe-acp-2' })
+  const cfg = {}
+  await hooks.config(cfg)
+  assert.equal(cfg.provider['mistral-vibe-acp-2'].name, 'Mistral Vibe (ACP · mistral-vibe-acp-2)')
+})

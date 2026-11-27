@@ -26,6 +26,7 @@ import {
   digestMessage,
   historyPrefixIntact,
   parseChatBody,
+  promptImages,
   sse,
   splitSystem,
   textOf,
@@ -355,7 +356,10 @@ export class AcpBridge {
       }
 
       const blocks = plan.rebuild
-        ? [{ type: 'text', text: buildReplayText({ system: split.system, tools: request.tools, serverName: conv.serverName, history: plan.history, input: plan.input }) }]
+        ? [
+            { type: 'text', text: buildReplayText({ system: split.system, tools: request.tools, serverName: conv.serverName, history: plan.history, input: plan.input }) },
+            ...(spec.supportsImages ? promptImages(plan.input) : []),
+          ]
         : toPromptBlocks(plan.input, { supportsImages: spec.supportsImages })
 
       conv.knownDigests = split.messages.map(digestMessage)
@@ -385,9 +389,33 @@ export class AcpBridge {
     const current = new Promise((resolve) => {
       release = resolve
     })
-    this.mutexes.set(key, previous.then(() => current, () => current))
-    await waitFor(previous, 60_000, signal)
-    return release
+    const tail = previous.then(() => current, () => current)
+    this.mutexes.set(key, tail)
+    tail.then(() => {
+      if (this.mutexes.get(key) === tail) this.mutexes.delete(key)
+    })
+    let released = false
+    const releaseOnce = () => {
+      if (released) return
+      released = true
+      release()
+    }
+    try {
+      await waitFor(previous, 60_000, signal)
+    } catch (error) {
+      // Unblock anyone queued behind this waiter so a timeout or abort never deadlocks the key.
+      releaseOnce()
+      throw error
+    }
+    this.activeRequests += 1
+    let counted = true
+    return () => {
+      if (counted) {
+        counted = false
+        this.activeRequests = Math.max(0, this.activeRequests - 1)
+      }
+      releaseOnce()
+    }
   }
 
   #planPrompt(conv, fingerprint, messages) {
@@ -742,6 +770,7 @@ export class AcpBridge {
           if (done) controller.close()
           else controller.enqueue(encoder.encode(value))
         } catch (error) {
+          if (conv) this.#reset(conv)
           controller.error(mapError(error))
         }
       },
@@ -776,7 +805,7 @@ export class AcpBridge {
     }
     yield* emit({ role: 'assistant', content: '' })
     let event = first
-    let timeoutMs = first === undefined ? this.#idleMs() : this.#firstOutputMs()
+    let timeoutMs = this.#firstOutputMs()
     try {
       for (;;) {
         if (!event) event = await this.#nextEvent(turn, signal, timeoutMs)
@@ -852,7 +881,7 @@ export class AcpBridge {
     const toolCalls = []
     let event = first
     let usage
-    let timeoutMs = first === undefined ? this.#idleMs() : this.#firstOutputMs()
+    let timeoutMs = this.#firstOutputMs()
     for (;;) {
       if (!event) event = await this.#nextEvent(turn, signal, timeoutMs)
       timeoutMs = this.#idleMs()
