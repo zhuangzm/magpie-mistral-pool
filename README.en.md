@@ -51,8 +51,8 @@ magpie plugin add github:weijianping/magpie-mistral-pool
 # 2) local folder (when editing the code)
 magpie plugin add <path-to-this-repo>
 
-# 3) npm package
-magpie plugin add @solary/magpie-mistral-pool
+# 3) npm package (not published yet; see docs/publish.md)
+# magpie plugin add @solary/magpie-mistral-pool
 ```
 
 Then sign in:
