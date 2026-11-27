@@ -1,12 +1,17 @@
-// Mistral Vibe, as an honest Magpie provider plugin.
+// Mistral Vibe, as an honest Magpie provider plugin, with a direct or official
+// ACP engine.
 //
 // What it does:
 // - Browser sign-in is the CLI's own PKCE flow (console.mistral.ai
 //   /api/vibe/sign-in), or a Vibe key pasted from the console.
-// - Requests are plain OpenAI Chat Completions on api.mistral.ai/v1 with the
-//   account key as a bearer token. Headers a harness adds to identify itself
-//   are dropped; no User-Agent is written unless `options.userAgent` asks for
-//   one. An earlier turn's thinking is moved into Mistral's typed part.
+// - The default engine sends plain OpenAI Chat Completions on
+//   api.mistral.ai/v1 with the account key as a bearer token. Headers a
+//   harness adds to identify itself are dropped; no User-Agent is written
+//   unless `options.userAgent` asks for one. An earlier turn's thinking is
+//   moved into Mistral's typed part.
+// - `options.engine: "acp"` runs the official vibe-acp child and bridges
+//   Magpie's tools over MCP, billing the $300 Vibe pool. Magpie still talks
+//   Chat Completions to this plugin; no client fingerprint is invented.
 // - Models come from the Vibe surface catalog; a Vibe key never sees
 //   codestral / ministral / pixtral.
 // - Usage is the public /billing/subscription + /billing/budget read, with
@@ -31,6 +36,7 @@ import {
 import { mistralBody } from './src/thinking.mjs'
 import { fetchBilling, usageFromBilling } from './src/billing.mjs'
 import { createTransport } from './src/transport.mjs'
+import { createAcpBridge } from './src/acp/runtime.mjs'
 
 const POLL_EVERY_MS = 3_000
 const RATE_LIMIT_MAX_WAIT_MS = 30_000
@@ -263,11 +269,54 @@ function createPluginFetch({ key, options, transport }) {
   }
 }
 
+function createAcpFetch({ bridge, fallback }) {
+  return async function acpFetch(input, init = {}) {
+    const request = typeof Request !== 'undefined' && input instanceof Request ? input : null
+    const url = request ? request.url : String(input)
+    const method = init.method ?? request?.method ?? 'POST'
+    let body = init.body
+    if (body === undefined && request && method !== 'GET' && method !== 'HEAD') {
+      body = await request.clone().arrayBuffer()
+    }
+    if (!/\/chat\/completions(?:\?|$)/i.test(url)) {
+      return fallback(url, {
+        ...init,
+        method,
+        body,
+        headers: init.headers ?? request?.headers,
+        signal: init.signal ?? request?.signal,
+      })
+    }
+    try {
+      return await bridge.fetch(url, {
+        ...init,
+        method,
+        body,
+        headers: init.headers ?? request?.headers,
+        signal: init.signal ?? request?.signal,
+      })
+    } catch (error) {
+      const status = Number(error?.status) >= 400 ? Number(error.status) : 500
+      return new Response(JSON.stringify({
+        error: {
+          message: error?.message ?? String(error),
+          type: error?.code ?? 'provider_error',
+          code: error?.code ?? 'provider_error',
+        },
+      }), {
+        status,
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+      })
+    }
+  }
+}
+
 // ---- the plugin ----
 
 export async function server(input = {}, options = {}) {
   const baseUrl = baseUrlOf(options)
   const consoleBase = options.consoleBase ?? DEFAULT_CONSOLE_BASE
+  const engine = options.engine === 'acp' ? 'acp' : 'direct'
   const log = (level, message) => {
     try {
       Promise.resolve(input?.client?.app?.log?.({ body: { service: PROVIDER, level, message } })).catch(() => {})
@@ -327,14 +376,30 @@ export async function server(input = {}, options = {}) {
     modelsTimeoutMs: options.modelsTimeoutMs,
   })
 
+  const acpBridges = new Map()
+  const acpFor = (key) => {
+    const existing = acpBridges.get(key)
+    if (existing) return existing
+    if (acpBridges.size >= 2) {
+      const oldest = acpBridges.keys().next().value
+      acpBridges.get(oldest)?.dispose?.().catch?.(() => {})
+      acpBridges.delete(oldest)
+    }
+    const bridge = createAcpBridge({ apiKey: key, options, log })
+    acpBridges.set(key, bridge)
+    return bridge
+  }
+
   return {
     async config(cfg) {
       cfg.provider ??= {}
-      cfg.provider[PROVIDER] ??= {
-        name: 'Mistral Vibe',
+      const was = cfg.provider[PROVIDER] ?? {}
+      cfg.provider[PROVIDER] = {
+        ...was,
+        name: engine === 'acp' ? 'Mistral Vibe (ACP · $300)' : 'Mistral Vibe',
         npm: '@ai-sdk/openai-compatible',
         api: baseUrl,
-        models: cloneStaticModels(),
+        models: was.models ?? cloneStaticModels(),
       }
     },
 
@@ -495,6 +560,14 @@ export async function server(input = {}, options = {}) {
         const auth = await getAuth()
         const key = keyOf(auth)
         if (!key) return {}
+        if (engine === 'acp') {
+          const directFetch = createPluginFetch({ key, options, transport })
+          return {
+            baseURL: baseUrl,
+            apiKey: key,
+            fetch: createAcpFetch({ bridge: acpFor(key), fallback: directFetch }),
+          }
+        }
         return {
           baseURL: baseUrl,
           apiKey: key,
@@ -534,5 +607,6 @@ export const _internal = {
   exchangeSignIn,
   rateLimitWaitMs,
   keyOf,
+  createAcpFetch,
   STATIC_VIBE_MODELS,
 }

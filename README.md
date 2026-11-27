@@ -1,10 +1,14 @@
 # magpie-mistral-pool
 
-A Magpie provider plugin for Mistral Vibe. It is the **honest** route: plain
-OpenAI Chat Completions on `api.mistral.ai/v1` with the account's own key, the
-Vibe-surface model catalog, and the plan's two allowance pools in the usage
-card. It does not spoof a client User-Agent, simulate a handshake, pool keys,
-or expose its own `/v1` gateway.
+A Magpie provider plugin for Mistral Vibe. It has two engines:
+
+- **direct** (default) — plain OpenAI Chat Completions through the account's
+  own key. It does not spoof a client, pool keys, or expose another gateway.
+- **acp** — runs the official `vibe-acp` child and bridges Magpie's tools over
+  MCP, so requests bill to the **Monthly Vibe ($300)** allowance.
+
+Both engines expose the Vibe-surface model catalog and show the plan's two
+allowance pools in the usage card.
 
 Provider id: `mistral-vibe`. It is separate from Magpie's built-in `mistral`
 API-key provider.
@@ -15,6 +19,64 @@ API-key provider.
 magpie plugin add <path-to-this-folder-or-package>
 magpie plugin login mistral-vibe
 ```
+
+## Engine: ACP ($300 Vibe pool)
+
+ACP needs the official CLI on the machine that runs the Magpie plugin host:
+
+```sh
+uv tool install --python 3.14 mistral-vibe
+vibe-acp --version
+```
+
+Select it in `plugins.json`:
+
+```jsonc
+{
+  "spec": "D:\\workspaceAI\\magpie-mistral-pool",
+  "options": {
+    "engine": "acp",
+    "proxyUrl": "http://127.0.0.1:7890"
+  }
+}
+```
+
+The provider is then named **Mistral Vibe (ACP · $300)**. Reload the plugin
+host (or restart Magpie) after changing `engine`; the old provider object can
+stay cached in a running UI.
+
+How the bridge works:
+
+- One `vibe-acp` child per conversation, each with an isolated temporary
+  `VIBE_HOME` and its own `config.toml`.
+- Magpie's tools are exposed through a loopback Streamable-HTTP MCP server.
+  Tool calls return to Magpie as normal OpenAI `tool_calls`; the next
+  `role: tool` message is fed back into the same ACP session.
+- Built-in Vibe tools (for example `bash`) are rejected. The bridge only
+  permits `run_typescript`, `search_tool_functions`, and the session's own
+  MCP tools.
+- If a Magpie tool takes longer than `relayAfterMs`, the bridge returns a
+  `[MAGPIE_RELAY]` notice and exposes `magpie_await_result` so the model can
+  wait without re-running the tool.
+
+ACP options:
+
+```jsonc
+{
+  "engine": "acp",
+  "vibeAcpPath": "C:\\Users\\you\\.local\\bin\\vibe-acp.exe",
+  "vibeAcpArgs": [],
+  "maxSessions": 4,
+  "relayAfterMs": 45000,
+  "sessionTtlMs": 600000,
+  "firstOutputMs": 720000,
+  "idleMs": 300000
+}
+```
+
+`vibeAcpPath` is optional; the plugin finds `vibe-acp` on `PATH` (or through
+`where.exe` on Windows). `vibeAcpArgs` is for test-only wrappers and is used
+together with `vibeAcpPath`.
 
 ## Sign in
 
@@ -37,8 +99,10 @@ the other is `aside`.
 
 - From **2026-12-01**, direct API calls made by non-Mistral products count
   against the **$30 API allowance**, not the **$300 Vibe allowance**.
-- Spending the `$300` Vibe pool requires the official `vibe` CLI / ACP path;
-  this plugin deliberately does not fake the client to reach it.
+- The `acp` engine runs the official CLI, so its calls count against the
+  **$300 Monthly Vibe** allowance. It keeps working when the `$30` API pool is
+  exhausted.
+- The `direct` engine never fakes a Vibe client to reach the `$300` pool.
 - `/billing/budget` can answer 403 for members without the
   `see_org_inference_usage` permission. That degrades to the plan only; it
   never breaks the usage card.
@@ -52,8 +116,9 @@ surface. An API key sees them only with `options.includeApiSurface: true`.
 
 ## Transport
 
-- First response byte: **720 s** (`options.firstOutputMs`).
-- Stream idle between chunks: **300 s** (`options.idleMs`).
+- First response byte: **720 s** (`options.firstOutputMs`), for both the
+  direct transport and the ACP bridge.
+- Stream idle between chunks: **300 s** (`options.idleMs`), for both engines.
 - TCP keepalive when `undici` is installed. In Magpie's Bun host the plugin
   uses the host's `fetch` instead, which applies `proxyUrl` per request and
   owns the connection settings.
@@ -80,6 +145,10 @@ bypass the host's fetch. It calls the host's `fetch` and passes `proxyUrl` as
 Bun's per-request `proxy` option, so the plugin host's proxy settings and CA
 store apply as they do for every other provider.
 
+The ACP child receives `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` from
+`proxyUrl`, with loopback explicitly excluded through `NO_PROXY`. Its control
+plane (whoami/billing) still uses the plugin's normal transport and proxy.
+
 The undici agent's internal `headersTimeout` / `bodyTimeout` are disabled on
 purpose. Its 300 s default would otherwise kill a request whose first byte
 takes longer, before the 720 s first-output budget is spent.
@@ -95,8 +164,13 @@ magpie group set <group> stays=session
 
 ## Troubleshooting
 
-- **402** — the pool the key bills to is exhausted. The plugin returns the
+- **402 in direct mode** — the `$30` API pool is exhausted. Switch to
+  `engine: "acp"` (and install `vibe-acp`) to bill the `$300` Vibe pool.
+- **402 in ACP mode** — the `$300` Vibe pool is exhausted, or the child is
+  using an account without the Vibe entitlement. The plugin returns the
   upstream error; it does not retry or cool down on its own.
+- **`MAX_SESSIONS`** — four live ACP children is the default. Lower
+  `maxSessions` or let idle sessions expire via `sessionTtlMs`.
 - **403 on /billing/budget** — expected without the org-usage permission;
   the card shows the plan.
 - **429** — Magpie's own retry semantics apply; the plugin does not invent a
@@ -112,5 +186,7 @@ magpie group set <group> stays=session
 
 ```sh
 npm test
-node scripts/billing-probe.mjs snapshot   # 12/1 pre-check
+node scripts/acp-smoke.mjs                 # real ACP text stream
+node scripts/acp-tool-smoke.mjs            # real MCP tool round-trip
+node scripts/billing-probe.mjs snapshot    # 12/1 pre-check
 ```

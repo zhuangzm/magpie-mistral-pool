@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import plugin, { server } from '../index.mjs'
+import plugin, { server, _internal } from '../index.mjs'
 
 const KEY = 'vibe-key-1'
 const RESET = new Date(Date.now() + 5 * 86_400_000).toISOString()
@@ -262,4 +262,48 @@ test('the api method offers a pasted Vibe key', async () => {
   assert.ok(api)
   assert.equal(api.label, 'Vibe API key')
   assert.match(api.placeholder, /Vibe Code CLI/)
+})
+
+test('the ACP engine names the provider and keeps the same model surface', async () => {
+  const hooks = await server({}, { engine: 'acp' })
+  const cfg = {}
+  await hooks.config(cfg)
+  assert.match(cfg.provider['mistral-vibe'].name, /ACP/)
+  assert.equal(cfg.provider['mistral-vibe'].npm, '@ai-sdk/openai-compatible')
+  assert.ok(cfg.provider['mistral-vibe'].models['mistral-medium-latest'])
+})
+
+test('createAcpFetch routes chat to ACP, other URLs to the direct fetch, and keeps 402', async () => {
+  const seen = []
+  const bridge = {
+    fetch: async (url) => {
+      seen.push(url)
+      return new Response('data: ok\n\n', { status: 200 })
+    },
+  }
+  const fallback = async (url) => {
+    seen.push(`fallback:${url}`)
+    return new Response('fallback', { status: 200 })
+  }
+  const fetch = _internal.createAcpFetch({ bridge, fallback })
+  const chat = await fetch('https://api.mistral.ai/v1/chat/completions', { method: 'POST', body: '{}' })
+  assert.equal(await chat.text(), 'data: ok\n\n')
+  const models = await fetch('https://api.mistral.ai/v1/models', { method: 'GET' })
+  assert.equal(await models.text(), 'fallback')
+
+  const quota = _internal.createAcpFetch({
+    bridge: {
+      fetch: async () => {
+        const error = new Error('API budget exhausted')
+        error.status = 402
+        error.code = 'QUOTA'
+        throw error
+      },
+    },
+    fallback,
+  })
+  const response = await quota('https://api.mistral.ai/v1/chat/completions', { method: 'POST', body: '{}' })
+  assert.equal(response.status, 402)
+  assert.match(await response.text(), /API budget exhausted/)
+  assert.ok(seen.includes('https://api.mistral.ai/v1/chat/completions'))
 })
