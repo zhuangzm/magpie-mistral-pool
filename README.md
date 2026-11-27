@@ -1,211 +1,204 @@
 # magpie-mistral-pool
 
-A Magpie provider plugin for Mistral Vibe. It has two engines:
+[![CI](https://github.com/weijianping/magpie-mistral-pool/actions/workflows/ci.yml/badge.svg)](https://github.com/weijianping/magpie-mistral-pool/actions/workflows/ci.yml)
 
-- **direct** (default) — plain OpenAI Chat Completions through the account's
-  own key. It does not spoof a client, pool keys, or expose another gateway.
-- **acp** — runs the official `vibe-acp` child and bridges Magpie's tools over
-  MCP, so requests bill to the **Monthly Vibe ($300)** allowance.
+**[English → README.en.md](README.en.md)**
 
-Both engines expose the Vibe-surface model catalog and show the plan's two
-allowance pools in the usage card.
+把 **Mistral 账号的 Vibe 额度**接进 [magpie](https://github.com/yetone/magpie)。同一个插件提供两种引擎：一种走官方 ACP，消耗套餐的 **$300 Vibe 池**；一种走诚实直连，按非 Mistral 产品计到 **$30 API 池**。
 
-Provider id: `mistral-vibe`. It is separate from Magpie's built-in `mistral`
-API-key provider.
+> 非官方插件，与 Mistral AI 无隶属关系。不伪造客户端指纹、不模拟官方客户端 User-Agent——直连引擎就是一个规矩的 OpenAI 兼容 provider。
 
-Two entries of this plugin can be loaded side by side — for example ACP on the
-`$300` pool as the main route and direct on the `$30` pool as a fallback.
-Give the second entry its own `options.providerId`; the id is what the host
-keys auth, config and the provider registry by, so the two never share a
-credential or a config slot:
+## 两个引擎的差别
+
+| 引擎 | 请求由谁发出 | 扣哪本账 |
+| --- | --- | --- |
+| `direct`（默认） | 插件自己，走 OpenAI Chat Completions | 2026-12-01 起，非 Mistral 产品的调用计 **$30 Platform API 额度** |
+| `acp` | 官方 `vibe-acp` 子进程（ACP + 本机 MCP 回桥） | 官方产品路径，计 **$300 Monthly Vibe 额度** |
+
+两者暴露同一份 Vibe surface 模型表，并在用量卡里同时展示计划的两本账。
+
+Provider id：`mistral-vibe`，与 Magpie 内置的 `mistral` API key provider 相互独立。
+
+## 双入口并存（$300 主路 + $30 兜底）
+
+同一份插件可以加载两次，各自独立 id：
 
 ```jsonc
 [
-  { "spec": "D:\\workspaceAI\\magpie-mistral-pool",
-    "options": { "engine": "acp", "proxyUrl": "http://127.0.0.1:7890" } },
-  { "spec": "D:\\workspaceAI\\magpie-mistral-pool",
-    "options": { "engine": "direct", "providerId": "mistral-vibe-api",
-                 "proxyUrl": "http://127.0.0.1:7890" } }
+  { "spec": "github:weijianping/magpie-mistral-pool",
+    "options": { "engine": "acp" } },
+  { "spec": "github:weijianping/magpie-mistral-pool",
+    "options": { "engine": "direct", "providerId": "mistral-vibe-api" } }
 ]
 ```
 
-The derived provider is named **Mistral Vibe (API)**. A blank `providerId`
-falls back to `mistral-vibe`.
+第二个入口的 provider 名是 **Mistral Vibe (API)**；`providerId` 留空则回落 `mistral-vibe`。宿主按 providerId 隔离凭证、配置与用量，两个入口不会共用同一个 key 槽。
 
-## Install
+改完 `engine` / `providerId` 后要重载插件宿主（或重启 Magpie），运行中的 UI 可能还缓存着旧的 provider 对象。
+
+## 安装
+
+三种方式任选其一：
 
 ```sh
-magpie plugin add <path-to-this-folder-or-package>
+# 1) GitHub
+magpie plugin add github:weijianping/magpie-mistral-pool
+
+# 2) 本地目录（改代码时用）
+magpie plugin add <本仓库路径>
+
+# 3) npm 包
+magpie plugin add @solary/magpie-mistral-pool
+```
+
+然后登录：
+
+```sh
 magpie plugin login mistral-vibe
 ```
 
-## Engine: ACP ($300 Vibe pool)
+## 引擎 acp：官方 CLI（$300 Vibe 池）
 
-ACP needs the official CLI on the machine that runs the Magpie plugin host:
+需要跑 Magpie 插件宿主的这台机器上有官方 CLI：
 
 ```sh
 uv tool install --python 3.14 mistral-vibe
 vibe-acp --version
 ```
 
-Select it in `plugins.json`:
+在 `plugins.json` 里选择它：
 
 ```jsonc
 {
-  "spec": "D:\\workspaceAI\\magpie-mistral-pool",
-  "options": {
-    "engine": "acp",
-    "proxyUrl": "http://127.0.0.1:7890"
-  }
+  "spec": "github:weijianping/magpie-mistral-pool",
+  "options": { "engine": "acp", "proxyUrl": "http://127.0.0.1:7890" }
 }
 ```
 
-The provider is then named **Mistral Vibe (ACP · $300)**. Reload the plugin
-host (or restart Magpie) after changing `engine` or `providerId`; the old
-provider object can stay cached in a running UI.
+此时 provider 名为 **Mistral Vibe (ACP · $300)**。
 
-How the bridge works:
+桥接怎么做的：
 
-- One `vibe-acp` child per conversation, each with an isolated temporary
-  `VIBE_HOME` and its own `config.toml`.
-- Magpie's tools are exposed through a loopback Streamable-HTTP MCP server.
-  Tool calls return to Magpie as normal OpenAI `tool_calls`; the next
-  `role: tool` message is fed back into the same ACP session.
-- Built-in Vibe tools (for example `bash`) are rejected. The bridge only
-  permits `run_typescript`, `search_tool_functions`, and the session's own
-  MCP tools.
-- If a Magpie tool takes longer than `relayAfterMs`, the bridge returns a
-  `[MAGPIE_RELAY]` notice and exposes `magpie_await_result` so the model can
-  wait without re-running the tool.
+- 每个会话一个 `vibe-acp` 子进程，各自独立的临时 `VIBE_HOME` 与 `config.toml`。
+- Magpie 的工具通过回环 Streamable-HTTP MCP server 暴露给 ACP；工具调用以普通 OpenAI `tool_calls` 回到 Magpie，下一条 `role: tool` 消息送回同一个 ACP 会话。
+- 内置 Vibe 工具（例如 `bash`）一律拒绝，只放行 `run_typescript`、`search_tool_functions` 与会话自身的 MCP 工具。
+- 工具耗时超过 `relayAfterMs` 时，桥先回一条 `[MAGPIE_RELAY]` 提示并暴露 `magpie_await_result`，模型等待而不用重跑工具。
 
-ACP options:
+## 选项
 
-```jsonc
-{
-  "engine": "acp",
-  "vibeAcpPath": "C:\\Users\\you\\.local\\bin\\vibe-acp.exe",
-  "vibeAcpArgs": [],
-  "maxSessions": 4,
-  "relayAfterMs": 45000,
-  "sessionTtlMs": 600000,
-  "firstOutputMs": 720000,
-  "idleMs": 300000
-}
-```
+| 选项 | 默认 | 作用 |
+| --- | --- | --- |
+| `engine` | `direct` | `direct` / `acp` |
+| `providerId` | `mistral-vibe` | provider id，双入口时用它区分 |
+| `providerName` | 按引擎推导 | 面板上显示的名字 |
+| `proxyUrl` | 空 | 出站代理，同时下发给 ACP 子进程 |
+| `vibeAcpPath` | 走 `PATH`（Windows 用 `where.exe` 找） | 显式指定 `vibe-acp` |
+| `vibeAcpArgs` | `[]` | 仅供测试用包装器，需与 `vibeAcpPath` 一起用 |
+| `maxSessions` | 4 | 单个桥里并发的 ACP 会话上限 |
+| `maxBridges` | 4 | 按 key 区分的桥实例上限，LRU 回收空闲桥 |
+| `relayAfterMs` | 45000 | 多久后转为 relay 提示 |
+| `sessionTtlMs` | 600000 | 会话空闲多久回收 |
+| `firstOutputMs` | 720000 | 首字节预算 |
+| `idleMs` | 300000 | 流式 chunk 之间的空闲预算 |
+| `includeApiSurface` | `false` | 是否放出 `codestral` / `ministral` / `pixtral` |
 
-`vibeAcpPath` is optional; the plugin finds `vibe-acp` on `PATH` (or through
-`where.exe` on Windows). `vibeAcpArgs` is for test-only wrappers and is used
-together with `vibeAcpPath`.
+环境变量：`VIBE_ACP_CMD` 覆盖 `vibe-acp` 命令；`HTTP_PROXY` / `HTTPS_PROXY` / `NODE_USE_ENV_PROXY` 见下面「代理」一节。
 
-## Sign in
+## 登录
 
-- **Browser (PKCE)** — the same flow as the official CLI: `POST
-  console.mistral.ai/api/vibe/sign-in`, open the returned page, poll, then
-  exchange the token for an API key. The key is stored by Magpie's auth store.
-- **Vibe API key** — paste a key made in the console under *Code > Vibe Code
-  CLI*.
+- **浏览器（PKCE）**：与官方 CLI 同一流程——`POST console.mistral.ai/api/vibe/sign-in`，打开返回的页面，轮询，再把 token 换成 API key；key 存在 Magpie 的 auth store 里。
+- **Vibe API key**：粘贴 console 里 *Code > Vibe Code CLI* 生成的 key。
 
-The whoami read is rooted at the console origin. A base that ends in `/v1`
-(or `/api/v1`) is stripped before `/api/vibe/whoami` is appended, so the
-plugin never requests `/v1/api/vibe/whoami`.
+`whoami` 的读取以 console 的 origin 为根：基址末尾的 `/v1`（或 `/api/v1`）会先被剥掉再拼 `/api/vibe/whoami`，所以永远不会打到 `/v1/api/vibe/whoami`。
 
-## Billing, and the two pools
+## 计费：两本账
 
-`GET /billing/subscription` and `GET /billing/budget` are read with the
-account's bearer key. `vibe_budget` is shown as **Monthly Vibe** and
-`api_budget` as **Platform API credits**; the pool the key bills to counts,
-the other is `aside`.
+用账号的 bearer key 读 `GET /billing/subscription` 与 `GET /billing/budget`：`vibe_budget` 显示为 **Monthly Vibe**，`api_budget` 显示为 **Platform API credits**。key 实际扣的那本账参与路由判定，另一本标 `aside`。
 
-- From **2026-12-01**, direct API calls made by non-Mistral products count
-  against the **$30 API allowance**, not the **$300 Vibe allowance**.
-- The `acp` engine runs the official CLI, so its calls count against the
-  **$300 Monthly Vibe** allowance. It keeps working when the `$30` API pool is
-  exhausted.
-- The `direct` engine never fakes a Vibe client to reach the `$300` pool.
-- `/billing/budget` can answer 403 for members without the
-  `see_org_inference_usage` permission. That degrades to the plan only; it
-  never breaks the usage card.
+- **2026-12-01 起**，非 Mistral 产品的直连 API 调用计 **$30 API 额度**，不再吃 **$300 Vibe 额度**。
+- `acp` 引擎跑官方 CLI，计 **$300 Monthly Vibe**；`$30` 池用尽时它照常可用。
+- `direct` 引擎不会伪装 Vibe 客户端去够 `$300` 池。
+- `/billing/budget` 对缺少 `see_org_inference_usage` 权限的成员可能返回 403；此时降级为只显示套餐，用量卡不会坏。
 
-## Models
+## 模型
 
-The account's live `GET /model-catalog?surface=vibe-code` wins; `GET /models`
-is the fallback, then a static Vibe-surface list. A Vibe (or unknown) key
-never sees `codestral`, `ministral` or `pixtral`, which route on the API
-surface. An API key sees them only with `options.includeApiSurface: true`.
+优先用账号实时的 `GET /model-catalog?surface=vibe-code`，失败回落 `GET /models`，再回落内置的 Vibe surface 列表。Vibe（或身份未知）的 key 看不到 `codestral`、`ministral`、`pixtral`（它们走 API surface）；API key 只有在 `options.includeApiSurface: true` 时才看得到。
 
-## Transport
+## 传输
 
-- First response byte: **720 s** (`options.firstOutputMs`), for both the
-  direct transport and the ACP bridge.
-- Stream idle between chunks: **300 s** (`options.idleMs`), for both engines.
-- TCP keepalive when `undici` is installed. In Magpie's Bun host the plugin
-  uses the host's `fetch` instead, which applies `proxyUrl` per request and
-  owns the connection settings.
-- No 60 s header timeout: it would kill a deep-thinking request before its
-  first byte.
-- SSE is passed chunk by chunk with backpressure; nothing buffers a whole
-  completion.
+- 首字节：**720 s**（`options.firstOutputMs`），直连与 ACP 桥一致。
+- 流式 chunk 之间的空闲：**300 s**（`options.idleMs`），两个引擎一致。
+- 装了 `undici` 时开 TCP keepalive；在 Magpie 的 Bun 宿主里改用宿主 `fetch`，由宿主按请求应用 `proxyUrl` 并持有连接设置。
+- 没有 60 s 的 header 超时：那会在深度思考的首字节到达前就掐断请求。
+- SSE 逐块透传并带背压，不缓冲整段补全。
 
-## Proxy
+## 代理
 
 ```jsonc
-// plugins.json -> the plugin's options
 { "proxyUrl": "http://127.0.0.1:7890" }
 ```
 
-On Node, `proxyUrl` needs `undici` (an optional dependency). Node's global
-`fetch` ignores `HTTPS_PROXY`; on Node 22.21+/24+ you can instead run Magpie
-with `NODE_USE_ENV_PROXY=1` and `HTTPS_PROXY` set. That works with or without
-`undici`: the transport reads the same flag and builds a `ProxyAgent` when
-the package is present, otherwise Node's own fetch does it.
+Node 下 `proxyUrl` 需要 `undici`（可选依赖）。Node 的全局 `fetch` 不读 `HTTPS_PROXY`；Node 22.21+/24+ 可以改用 `NODE_USE_ENV_PROXY=1` + `HTTPS_PROXY`，装不装 `undici` 都行。
 
-Under Magpie's Bun host the plugin does not load `undici` at all — that would
-bypass the host's fetch. It calls the host's `fetch` and passes `proxyUrl` as
-Bun's per-request `proxy` option, so the plugin host's proxy settings and CA
-store apply as they do for every other provider.
+Magpie 的 Bun 宿主下插件完全不加载 `undici`（那会绕开宿主 fetch），而是调宿主 `fetch`，把 `proxyUrl` 作为 Bun 的按请求 `proxy` 选项传下去，所以宿主的代理与 CA 设置照常生效。
 
-The ACP child receives `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` from
-`proxyUrl`, with loopback explicitly excluded through `NO_PROXY`. Its control
-plane (whoami/billing) still uses the plugin's normal transport and proxy.
+ACP 子进程从 `proxyUrl` 得到 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`，并用 `NO_PROXY` 排除回环；它的控制面（whoami / billing）仍走插件自己的传输与代理。
 
-The undici agent's internal `headersTimeout` / `bodyTimeout` are disabled on
-purpose. Its 300 s default would otherwise kill a request whose first byte
-takes longer, before the 720 s first-output budget is spent.
+undici agent 的 `headersTimeout` / `bodyTimeout` 是故意关掉的：它默认 300 s，会在首字节晚到的请求上先动手，把 720 s 的预算废掉。
 
-## Sticky sessions
+## 会话粘性
 
-`chat.headers` writes `x-affinity` and `x-session-id` from Magpie's session
-id, only for this provider. To keep one account for a whole session:
+`chat.headers` 会从 Magpie 的 session id 写入 `x-affinity` 与 `x-session-id`，且只对本 provider 生效。要让整个会话固定在一个账号上：
 
 ```sh
 magpie group set <group> stays=session
 ```
 
-## Troubleshooting
+## 排错
 
-- **402 in direct mode** — the `$30` API pool is exhausted. Switch to
-  `engine: "acp"` (and install `vibe-acp`) to bill the `$300` Vibe pool.
-- **402 in ACP mode** — the `$300` Vibe pool is exhausted, or the child is
-  using an account without the Vibe entitlement. The plugin returns the
-  upstream error; it does not retry or cool down on its own.
-- **`MAX_SESSIONS`** — four live ACP children is the default. Lower
-  `maxSessions` or let idle sessions expire via `sessionTtlMs`.
-- **403 on /billing/budget** — expected without the org-usage permission;
-  the card shows the plan.
-- **429** — Magpie's own retry semantics apply; the plugin does not invent a
-  cooldown.
-- **Timeouts** — raise `firstOutputMs` / `idleMs`, or check the proxy. A
-  timeout before any byte is `TRANSPORT_TIMEOUT_FIRST_OUTPUT`; a stalled
-  stream is `TRANSPORT_TIMEOUT_IDLE`.
-- **Proxy ignored** — on Node, install `undici` or use
-  `NODE_USE_ENV_PROXY=1`; under Magpie's Bun host the per-request `proxy`
-  option is already applied.
+| 现象 | 处理 |
+| --- | --- |
+| `direct` 模式 402 | `$30` API 池用尽；改 `engine: "acp"`（并装好 `vibe-acp`）去吃 `$300` Vibe 池 |
+| `acp` 模式 402 | `$300` Vibe 池用尽，或子进程用的账号没有 Vibe 权益；插件原样返回上游错误，不自作重试或冷却 |
+| `MAX_SESSIONS` | 默认 4 个并发 ACP 子进程；调小 `maxSessions`，或靠 `sessionTtlMs` 让空闲会话过期 |
+| `/billing/budget` 403 | 缺少组织用量权限时的预期行为，卡片只显示套餐 |
+| 429 | 走 Magpie 自己的重试语义，插件不发明冷却 |
+| 超时 | 调大 `firstOutputMs` / `idleMs`，或检查代理；首字节前超时是 `TRANSPORT_TIMEOUT_FIRST_OUTPUT`，流卡住是 `TRANSPORT_TIMEOUT_IDLE` |
+| 代理没生效 | Node 下装 `undici` 或用 `NODE_USE_ENV_PROXY=1`；Bun 宿主下按请求 `proxy` 已经生效 |
+| 面板还是旧额度 | GUI 缓存，重开设置页或重启 Magpie 插件宿主 |
 
-## Tests
+## 安全与边界
+
+- 不伪造 User-Agent、不模拟客户端指纹、不做多 key 轮换；多账号与轮换交给 Magpie 原生能力。
+- 出站请求头走白名单清洗，只保留必要字段，不透传宿主的杂项头。
+- 只读 `billing` / `whoami`，不在本地落额度缓存。
+- ACP 子进程用临时 `VIBE_HOME`，退出即清理（Windows 走 `taskkill /T` 兜底）。
+
+## 测试
 
 ```sh
-npm test
-node scripts/acp-smoke.mjs                 # real ACP text stream
-node scripts/acp-tool-smoke.mjs            # real MCP tool round-trip
-node scripts/billing-probe.mjs snapshot    # 12/1 pre-check
+npm test                                   # 单元 + 契约测试，全部打本地 mock
+node scripts/acp-smoke.mjs                 # 真实 ACP 文本流（需要 key）
+node scripts/acp-tool-smoke.mjs            # 真实 MCP 工具往返（需要 key）
+node scripts/billing-probe.mjs snapshot    # 双池余额快照
 ```
+
+CI（`.github/workflows/ci.yml`）在 ubuntu / windows / macos × node 20/22/24 跑 `node --test` 与 `npm pack --dry-run`。`scripts/*.mjs` 是真实联网冒烟，只在本地跑，不进 CI。
+
+## 目录
+
+| 路径 | 内容 |
+| --- | --- |
+| `index.mjs` | 插件入口：provider 定义、auth、billing、chat |
+| `src/core.mjs` | 常量、Vibe surface 模型表、key 类型判定、请求头清洗 |
+| `src/billing.mjs` | subscription / budget 读取，映射成 Magpie 的用量窗口 |
+| `src/thinking.mjs` | 把历史思考字段改写成 Mistral 接受的 typed content part |
+| `src/transport.mjs` | 720 s / 300 s 双层看门狗、代理、重试边界 |
+| `src/acp/` | ACP 运行时、JSON-RPC、MCP server、OpenAI 映射、子进程配置 |
+| `test/` | `node --test` 单元与契约测试 |
+| `scripts/` | 真实联网冒烟与双池余额探针 |
+
+## License
+
+MIT，见 [LICENSE](LICENSE)。Mistral、Vibe 等名称与商标归 Mistral AI 所有。
+

@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  test:
+    name: node ${{ matrix.node }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: node version
+        run: node --version
+
+      # Everything runs against local mocks: no key, no network, no quota.
+      # scripts/*.mjs are live smoke tests and stay local-only.
+      - name: Unit + contract tests
+        run: node --test
+
+      - name: Package packs for npm
+        run: npm pack --dry-run
