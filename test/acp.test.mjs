@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { AcpBridge } from '../src/acp/runtime.mjs'
+import { buildChildEnv } from '../src/acp/config.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const fake = join(here, '..', 'fixtures', 'fake-vibe-acp.mjs')
@@ -289,4 +290,46 @@ test('ACP mutex recovers when a queued request aborts while waiting for the lock
   } finally {
     await acp.dispose()
   }
+})
+
+test('buildChildEnv puts an explicit proxyUrl ahead of the environment', () => {
+  const env = buildChildEnv({
+    vibeHome: join(tmpdir(), 'magpie-acp-proxy-option'),
+    apiKey: 'test-key',
+    proxyUrl: 'http://127.0.0.1:1080',
+    base: { HTTPS_PROXY: 'http://127.0.0.1:7890', HTTP_PROXY: 'http://127.0.0.1:7890' },
+  })
+  assert.equal(env.HTTPS_PROXY, 'http://127.0.0.1:1080')
+  assert.equal(env.HTTP_PROXY, 'http://127.0.0.1:1080')
+  assert.equal(env.ALL_PROXY, 'http://127.0.0.1:1080')
+  const bypass = env.NO_PROXY.split(",")
+  for (const host of ['localhost', '127.0.0.1', '::1']) assert.ok(bypass.includes(host), env.NO_PROXY)
+})
+
+test('buildChildEnv follows the system proxy when nothing is configured', () => {
+  const env = buildChildEnv({
+    vibeHome: join(tmpdir(), 'magpie-acp-proxy-system'),
+    apiKey: 'test-key',
+    probe: () => ({ proxy: '127.0.0.1:7899', bypass: ['internal.example'] }),
+    base: {},
+  })
+  assert.equal(env.HTTPS_PROXY, 'http://127.0.0.1:7899')
+  assert.equal(env.HTTP_PROXY, 'http://127.0.0.1:7899')
+  assert.equal(env.ALL_PROXY, 'http://127.0.0.1:7899')
+  const bypass = env.NO_PROXY.split(",")
+  assert.ok(bypass.includes('internal.example'), env.NO_PROXY)
+  assert.ok(bypass.includes('127.0.0.1'), env.NO_PROXY)
+})
+
+test('buildChildEnv stays direct when the option says none', () => {
+  const env = buildChildEnv({
+    vibeHome: join(tmpdir(), 'magpie-acp-proxy-none'),
+    apiKey: 'test-key',
+    proxyUrl: 'none',
+    base: { HTTPS_PROXY: 'http://127.0.0.1:7890' },
+    probe: () => ({ proxy: '127.0.0.1:7899' }),
+  })
+  for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY']) assert.equal(env[key], undefined, key)
+  const bypass = env.NO_PROXY.split(",")
+  assert.ok(bypass.includes('127.0.0.1'), env.NO_PROXY)
 })

@@ -468,6 +468,7 @@ export class AcpBridge {
       vibeHome,
       apiKey: this.apiKey,
       proxyUrl: this.options.proxyUrl,
+      noProxy: this.options.noProxy,
     })
 
     const args = Array.isArray(this.options.vibeAcpArgs) ? this.options.vibeAcpArgs.map(String) : []

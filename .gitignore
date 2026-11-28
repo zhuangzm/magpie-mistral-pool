@@ -4,3 +4,4 @@ billing-probe-*.json
 plugin-list*.json
 *.log
 .tmp-shot*.png
+.tmp-probe.txt

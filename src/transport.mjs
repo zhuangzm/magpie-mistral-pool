@@ -7,6 +7,8 @@
 // a deep-thinking request before its first byte, so there is deliberately
 // none.
 
+import { resolveProxy, shouldBypassProxy } from './proxy.mjs'
+
 export class TransportError extends Error {
   constructor(code, message, options = {}) {
     super(message)
@@ -41,24 +43,14 @@ function classify(error) {
   return new TransportError('TRANSPORT_NETWORK', message, { cause: error })
 }
 
-// Node's own fetch reads NODE_USE_ENV_PROXY at startup; the npm undici build
-// does not. Reading the same flag here keeps `NODE_USE_ENV_PROXY=1` working
-// when the optional undici dependency is installed and supplies the Agent.
-function envProxyUrl() {
-  const flag = process.env.NODE_USE_ENV_PROXY
-  if (flag !== '1' && flag !== 'true') return undefined
-  return (
-    process.env.HTTPS_PROXY ||
-    process.env.https_proxy ||
-    process.env.HTTP_PROXY ||
-    process.env.http_proxy ||
-    undefined
-  )
-}
-
 /**
  * @param {object} [options]
- * @param {string} [options.proxyUrl]   needs undici; a warning is logged when it can't be honoured
+ * @param {string} [options.proxyUrl]   URL, "system"/"auto" to follow the environment or the Windows settings, or "none"
+ * @param {Function} [options.proxyProbe]   tests: () => string | undefined
+ * @param {string} [options.noProxy]        overrides NO_PROXY
+ * @param {{proxy?: string, bypass?: string|string[]}} [options.resolvedProxy]
+ *        an already resolved lookup; it is never re-read, so an explicit "none"
+ *        stays direct even when the environment or the system says otherwise
  * @param {number} [options.firstOutputMs]  720s: request start to response headers
  * @param {number} [options.idleMs]         300s: between two stream chunks
  * @param {number} [options.keepAliveInitialDelayMs]
@@ -69,6 +61,9 @@ function envProxyUrl() {
  */
 export function createTransport({
   proxyUrl,
+  proxyProbe,
+  noProxy,
+  resolvedProxy: preset,
   firstOutputMs = 720_000,
   idleMs = 300_000,
   keepAliveInitialDelayMs = 30_000,
@@ -77,66 +72,66 @@ export function createTransport({
   undiciLoader,
   logger,
 } = {}) {
-  let resolved = null
-  let resolving = null
   // Magpie's plugin host is Bun. It replaces globalThis.fetch with a wrapper
   // that applies the host's proxy (and a per-request `proxy` option), so the
   // npm undici build must not be used there: it would bypass that wrapper.
   const bun = typeof globalThis.Bun !== 'undefined' && typeof globalThis.Bun.version === 'string'
-  const proxy = proxyUrl ?? envProxyUrl()
+  // The plugin resolves once so the API sockets, the control plane and the
+  // vibe-acp child all leave through the same exit. A preset is used verbatim:
+  // resolving again would turn `proxyUrl: "none"` back into whatever the
+  // environment or the Windows settings happen to advertise.
+  const { proxy, bypass } = preset ?? resolveProxy(proxyUrl, { probe: proxyProbe, noProxy, logger })
+  const explicitProxy = !preset && Boolean(String(proxyUrl ?? '').trim())
+  const resolved = new Map()
 
-  const resolveImpl = () => {
-    if (resolved) return resolved
-    if (resolving) return resolving
-    resolving = (async () => {
+  const agentOptions = {
+    connect: { keepAlive: true, keepAliveInitialDelay: keepAliveInitialDelayMs },
+    keepAliveTimeout: 60_000,
+    headersTimeout: 0,
+    bodyTimeout: 0,
+  }
+
+  const resolveImpl = (kind) => {
+    if (resolved.has(kind)) return resolved.get(kind)
+    const pending = (async () => {
       if (fetchImpl) {
-        if (proxyUrl) logger?.('warn', 'proxyUrl is set but a custom fetch was provided; the proxy is not applied')
-        resolved = { fetch: fetchImpl, dispatcher: undefined }
-        return resolved
+        if (explicitProxy) logger?.('warn', 'proxyUrl is set but a custom fetch was provided; the proxy is not applied')
+        return { fetch: fetchImpl, dispatcher: undefined }
       }
-      if (bun) {
-        resolved = { fetch: globalThis.fetch, dispatcher: undefined }
-        return resolved
-      }
+      if (bun) return { fetch: globalThis.fetch, dispatcher: undefined }
       try {
         const mod = await (undiciLoader ? undiciLoader() : import('undici'))
         // Our watchdog owns both deadlines. undici's own headersTimeout
         // defaults to 300s, which would kill a 400s first byte before the
         // 720s budget is spent, so both internal timeouts are disabled.
-        const agentOptions = {
-          connect: { keepAlive: true, keepAliveInitialDelay: keepAliveInitialDelayMs },
-          keepAliveTimeout: 60_000,
-          headersTimeout: 0,
-          bodyTimeout: 0,
+        if (kind === 'proxy' && proxy) {
+          return { fetch: mod.fetch, dispatcher: new mod.ProxyAgent({ uri: proxy, ...agentOptions }) }
         }
-        const dispatcher = proxy
-          ? new mod.ProxyAgent({ uri: proxy, ...agentOptions })
-          : new mod.Agent({
-              ...agentOptions,
-            })
-        resolved = { fetch: mod.fetch, dispatcher }
-        return resolved
+        return { fetch: mod.fetch, dispatcher: new mod.Agent(agentOptions) }
       } catch (error) {
         logger?.(
           'warn',
-          `undici unavailable, falling back to global fetch${proxy ? ' (proxy is left to Node)' : ''}: ${error?.message ?? error}`,
+          `undici unavailable, falling back to global fetch${kind === 'proxy' ? ' (proxy is left to Node)' : ''}: ${error?.message ?? error}`,
         )
-        resolved = { fetch: globalThis.fetch, dispatcher: undefined }
-        return resolved
+        return { fetch: globalThis.fetch, dispatcher: undefined }
       }
     })()
-    return resolving
+    resolved.set(kind, pending)
+    return pending
   }
 
   const fetch = async (url, init = {}) => {
-    const { fetch: impl, dispatcher } = await resolveImpl()
+    // A local target must stay direct even when a proxy is configured: the
+    // plugin's own smoke tests and any self-hosted endpoint live on loopback.
+    const useProxy = Boolean(proxy) && !shouldBypassProxy(url, bypass)
+    const { fetch: impl, dispatcher } = await resolveImpl(useProxy ? 'proxy' : 'direct')
     let attempt = 0
     for (;;) {
       try {
         return await fetchOnce(impl, dispatcher, url, init, {
           firstOutputMs,
           idleMs,
-          proxy: bun ? proxy : undefined,
+          proxy: bun && useProxy ? proxy : undefined,
         })
       } catch (error) {
         const retryable = error?.code === 'TRANSPORT_RESET' || error?.code === 'TRANSPORT_NETWORK'

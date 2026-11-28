@@ -37,6 +37,7 @@ import { mistralBody } from './src/thinking.mjs'
 import { fetchBilling, usageFromBilling } from './src/billing.mjs'
 import { createTransport } from './src/transport.mjs'
 import { createAcpBridge } from './src/acp/runtime.mjs'
+import { resolveProxy } from './src/proxy.mjs'
 
 const POLL_EVERY_MS = 3_000
 const RATE_LIMIT_MAX_WAIT_MS = 30_000
@@ -333,8 +334,24 @@ export async function server(input = {}, options = {}) {
     } catch {}
   }
 
+  // One resolution for the whole plugin: the control plane, the API sockets and
+  // the vibe-acp child all leave through the same proxy. Unset means the
+  // environment first, then the Windows system settings, then direct.
+  const resolvedProxy = resolveProxy(options.proxyUrl, {
+    probe: options.proxyProbe,
+    // A user-typed exception list has to reach both the sockets and the child.
+    noProxy: options.noProxy,
+    logger: log,
+  })
+  log(
+    'info',
+    `proxy: ${resolvedProxy.source}${resolvedProxy.proxy ? ` ${resolvedProxy.proxy}` : ''}`,
+  )
+
   const transport = createTransport({
-    proxyUrl: options.proxyUrl,
+    // Hand over the answer, not the question: re-resolving here would let an
+    // explicit "none" be overridden by the environment or the system settings.
+    resolvedProxy,
     firstOutputMs: options.firstOutputMs,
     idleMs: options.idleMs,
     keepAliveInitialDelayMs: options.keepAliveInitialDelayMs,
@@ -409,7 +426,15 @@ export async function server(input = {}, options = {}) {
         if (acpBridges.size < maxBridges) break
       }
     }
-    const bridge = createAcpBridge({ apiKey: key, options, log })
+    const bridge = createAcpBridge({
+      apiKey: key,
+      options: {
+        ...options,
+        proxyUrl: resolvedProxy.proxy ?? 'none',
+        noProxy: resolvedProxy.bypass.join(','),
+      },
+      log,
+    })
     acpBridges.set(key, bridge)
     return bridge
   }

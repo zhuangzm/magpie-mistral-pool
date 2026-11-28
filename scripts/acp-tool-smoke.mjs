@@ -13,7 +13,6 @@ if (!key) {
 const bridge = new AcpBridge({
   apiKey: key,
   options: {
-    proxyUrl: process.env.HTTPS_PROXY || process.env.HTTP_PROXY,
     baseUrl: process.env.MISTRAL_BASE_URL || 'https://api.mistral.ai/v1',
     vibeAcpPath: process.env.VIBE_ACP_PATH || undefined,
     firstOutputMs: 120_000,

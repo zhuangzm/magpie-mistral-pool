@@ -164,11 +164,6 @@ test('a real HTTP SSE response is passed through chunk by chunk', async () => {
 })
 
 test('undici agents disable their own 300s timeouts so 720s can be spent', async () => {
-  delete process.env.NODE_USE_ENV_PROXY
-  delete process.env.HTTPS_PROXY
-  delete process.env.https_proxy
-  delete process.env.HTTP_PROXY
-  delete process.env.http_proxy
   const seen = []
   class Agent {
     constructor(options) {
@@ -182,7 +177,9 @@ test('undici agents disable their own 300s timeouts so 720s can be spent', async
   }
   const undiciLoader = async () => ({ Agent, ProxyAgent, fetch: async () => new Response('ok') })
 
-  const transport = createTransport({ undiciLoader })
+  // The probe keeps the Windows registry out of the picture: a machine with
+  // WinINET switched on must not turn this into a ProxyAgent test.
+  const transport = createTransport({ undiciLoader, proxyProbe: () => undefined })
   assert.equal(await (await transport.fetch('http://mock', {})).text(), 'ok')
   assert.equal(seen[0].kind, 'agent')
   assert.equal(seen[0].options.headersTimeout, 0)
@@ -190,7 +187,7 @@ test('undici agents disable their own 300s timeouts so 720s can be spent', async
   assert.equal(seen[0].options.connect.keepAlive, true)
 })
 
-test('NODE_USE_ENV_PROXY selects a ProxyAgent from the environment', async () => {
+test('an HTTPS_PROXY in the environment selects a ProxyAgent', async () => {
   const seen = []
   class Agent {
     constructor(options) {
@@ -204,17 +201,17 @@ test('NODE_USE_ENV_PROXY selects a ProxyAgent from the environment', async () =>
   }
   const undiciLoader = async () => ({ Agent, ProxyAgent, fetch: async () => new Response('ok') })
 
-  process.env.NODE_USE_ENV_PROXY = '1'
-  process.env.HTTPS_PROXY = 'http://127.0.0.1:7890'
+  // No NODE_USE_ENV_PROXY gate any more, and a non-default port on purpose so
+  // the assertion proves the value is read instead of assumed.
+  process.env.HTTPS_PROXY = 'http://127.0.0.1:7891'
   try {
-    const transport = createTransport({ undiciLoader })
+    const transport = createTransport({ undiciLoader, proxyProbe: () => undefined })
     await transport.fetch('http://mock', {})
   } finally {
-    delete process.env.NODE_USE_ENV_PROXY
     delete process.env.HTTPS_PROXY
   }
   assert.equal(seen[0].kind, 'proxy')
-  assert.equal(seen[0].options.uri, 'http://127.0.0.1:7890')
+  assert.equal(seen[0].options.uri, 'http://127.0.0.1:7891')
   assert.equal(seen[0].options.headersTimeout, 0)
 })
 
@@ -233,4 +230,76 @@ test('a pre-aborted caller signal rejects before calling fetchImpl', async () =>
     (error) => error.name === 'AbortError' && error.message === 'already stopped',
   )
   assert.equal(called, false)
+})
+
+test('a pre-resolved direct choice is not re-read from the environment', async () => {
+  const seen = []
+  class Agent {
+    constructor(options) {
+      seen.push({ kind: 'agent', options })
+    }
+  }
+  class ProxyAgent {
+    constructor(options) {
+      seen.push({ kind: 'proxy', options })
+    }
+  }
+  const undiciLoader = async () => ({ Agent, ProxyAgent, fetch: async () => new Response('ok') })
+  const logs = []
+
+  // proxyUrl: "none" becomes {proxy: undefined} in the plugin, and that
+  // decision must survive: neither HTTPS_PROXY nor the system settings may
+  // switch the proxy back on behind the user's back.
+  process.env.HTTPS_PROXY = 'http://127.0.0.1:7893'
+  try {
+    const transport = createTransport({
+      resolvedProxy: { proxy: undefined, bypass: [] },
+      undiciLoader,
+      proxyProbe: () => '127.0.0.1:7894',
+      logger: (level, message) => logs.push(`${level}: ${message}`),
+    })
+    assert.equal(await (await transport.fetch('http://api.mock/api/vibe/whoami', {})).text(), 'ok')
+  } finally {
+    delete process.env.HTTPS_PROXY
+  }
+
+  assert.equal(seen.length, 1)
+  assert.equal(seen[0].kind, 'agent')
+  assert.deepEqual(logs, [])
+})
+
+test('a pre-resolved proxy reaches the ProxyAgent without a second lookup', async () => {
+  const seen = []
+  class Agent {
+    constructor(options) {
+      seen.push({ kind: 'agent', options })
+    }
+  }
+  class ProxyAgent {
+    constructor(options) {
+      seen.push({ kind: 'proxy', options })
+    }
+  }
+  const undiciLoader = async () => ({ Agent, ProxyAgent, fetch: async () => new Response('ok') })
+  let probed = 0
+
+  process.env.HTTPS_PROXY = 'http://127.0.0.1:7895'
+  try {
+    const transport = createTransport({
+      resolvedProxy: { proxy: 'http://127.0.0.1:7896', bypass: ['bypass.example'] },
+      undiciLoader,
+      proxyProbe: () => {
+        probed += 1
+        return undefined
+      },
+    })
+    await transport.fetch('http://api.mock/v1/chat/completions', { method: 'POST', body: '{}' })
+    await transport.fetch('http://bypass.example/v1/chat/completions', { method: 'POST', body: '{}' })
+  } finally {
+    delete process.env.HTTPS_PROXY
+  }
+
+  assert.equal(probed, 0)
+  assert.deepEqual(seen.map((entry) => entry.kind), ['proxy', 'agent'])
+  assert.equal(seen[0].options.uri, 'http://127.0.0.1:7896')
 })

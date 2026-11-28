@@ -7,6 +7,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, writeFileSync } from 'n
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { STATIC_VIBE_MODELS } from '../core.mjs'
+import { LOOPBACK_NO_PROXY, PROXY_VARS, parseNoProxy, resolveProxy } from '../proxy.mjs'
 
 const EFFORT_ORDER = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
@@ -205,7 +206,7 @@ const ENV_KEYS = [
   'LOCALAPPDATA',
 ]
 
-export function buildChildEnv({ vibeHome, apiKey, proxyUrl, base = process.env }) {
+export function buildChildEnv({ vibeHome, apiKey, proxyUrl, noProxy, base = process.env, probe }) {
   const keep = new Set(ENV_KEYS.map((key) => key.toUpperCase()))
   const env = {}
   for (const [key, value] of Object.entries(base)) {
@@ -213,12 +214,23 @@ export function buildChildEnv({ vibeHome, apiKey, proxyUrl, base = process.env }
   }
   env.HOME = homedir()
   env.USERPROFILE = homedir()
-  if (proxyUrl) {
-    env.HTTP_PROXY ??= proxyUrl
-    env.HTTPS_PROXY ??= proxyUrl
-    env.ALL_PROXY ??= proxyUrl
+  // The child has to leave through the same door as the plugin: the option
+  // wins, "none" disables the proxy, and an unset option follows the
+  // environment or the Windows settings before it falls back to direct.
+  // the tests inject probe so the child env never reads the real registry
+  const resolved = resolveProxy(proxyUrl, { noProxy, env: base, probe })
+  for (const key of PROXY_VARS) delete env[key]
+  if (resolved.proxy) {
+    env.HTTP_PROXY = resolved.proxy
+    env.HTTPS_PROXY = resolved.proxy
+    env.ALL_PROXY = resolved.proxy
   }
-  env.NO_PROXY = [env.NO_PROXY, 'localhost,127.0.0.1,::1'].filter(Boolean).join(',')
+  env.NO_PROXY = [
+    ...new Set(
+      [env.NO_PROXY, noProxy, resolved.bypass.join(','), LOOPBACK_NO_PROXY]
+        .flatMap((item) => parseNoProxy(item)),
+    ),
+  ].join(',')
   env.VIBE_HOME = vibeHome
   env.MISTRAL_API_KEY = apiKey
   return env
