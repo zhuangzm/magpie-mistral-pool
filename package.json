@@ -1,6 +1,6 @@
 {
   "name": "@solary/magpie-mistral-pool",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Mistral Vibe provider for Magpie: honest Chat Completions or official ACP ($300 Vibe pool), Vibe-surface models, dual-pool usage.",
   "type": "module",
   "main": "./index.mjs",
