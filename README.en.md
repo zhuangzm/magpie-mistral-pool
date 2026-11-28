@@ -49,7 +49,7 @@ magpie plugin add github:zhuangzm/magpie-mistral-pool
 # 2) local folder (when editing the code)
 magpie plugin add <path-to-this-repo>
 
-# 3) npm package (not published on npm yet; see docs/publish.md)
+# 3) npm package (optional, not published yet; see docs/publish.md)
 # magpie plugin add @solary/magpie-mistral-pool
 ```
 

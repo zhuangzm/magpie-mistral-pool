@@ -8,11 +8,11 @@
 | --- | --- |
 | 代码仓库 | `D:\workspaceAI\magpie-mistral-pool`，分支 `main` |
 | 远端 | <https://github.com/zhuangzm/magpie-mistral-pool>，**Public**，默认分支 `main`，topic `magpie-plugin` |
-| npm 名 | `@solary/magpie-mistral-pool`，版本 `0.1.0`（尚未发布） |
+| npm 名 | `@solary/magpie-mistral-pool`，版本 `0.1.1`（**尚未发布，可选通道**；当前以 GitHub 分发） |
 | Magpie 插件名 | `Mistral Vibe (honest)`；provider `mistral-vibe`（第二条入口 `mistral-vibe-api`） |
-| 已就绪 | 中英双 README（`README.md` / `README.en.md`）、MIT LICENSE、`magpie.*` 元数据、CI（ubuntu/windows/macos × node 20/22/24）、tag `v0.1.0`、Release `v0.1.0` |
-| 已验证 | `node --test` 61/61；`npm pack --dry-run` 15 文件 / 46 kB，不含 `docs/`、`test/`、`fixtures/`、实验 JSON；CI 在 `b078464` / `4cbffe7` / `346b793` 三次全绿 |
-| 待完成 | Discover 收录（topic 已加，等 `tagged` cron 下一次跑到）、真机 `plugin add github:` 验证、npm 发布（可选） |
+| 已就绪 | 中英双 README（`README.md` / `README.en.md`）、MIT LICENSE、`magpie.*` 元数据、CI（ubuntu/windows/macos × node 20/22/24）、tag 与 Release `v0.1.0`；`v0.1.1` tag 随本次发版补上 |
+| 已验证 | `node --test` 82/82；`npm pack --dry-run` 16 文件 / 51 kB，不含 `docs/`、`test/`、`fixtures/`、`scripts/`、实验 JSON；CI 三平台矩阵全绿 |
+| 待完成 | Discover 收录（topic 已加，等 `tagged` cron 下一次跑到）、市场 `registry.json` 精编 entry（可选） |
 
 ## 1. 推到 GitHub（已完成）
 
@@ -65,7 +65,7 @@ magpie plugin
 - 同一份 spec 加载两条 entry 就是双入口（`mistral-vibe` / `mistral-vibe-api`），宿主按 providerId 隔离凭证与用量。
 - 改完 `engine` / `providerId` 必须重载插件宿主或重启 Magpie，面板里可能还缓存着旧 provider 对象。
 
-## 4. 发 npm（可选）
+## 4. 发 npm（可选，未发布）
 
 现状：`registry.npmjs.org` 上 `@solary/magpie-mistral-vibe` 与 `@solary/magpie-mistral-pool` 都是 404，说明 `@solary` 这个 scope 还没在官方 npm 上建起来（母仓库 `magpie-mistral-code` 一直靠 GitHub 分发）。所以这条路要先做账号侧的事：
 
@@ -127,8 +127,8 @@ Discover 页读的是社区市场仓 `D:\workspaceAI\plugins` 的 `dist` 分支�
 
 ## 6. 发版前检查清单
 
-- `node --test` 61/61 通过（全部打本地 mock，不耗额度）。
-- `npm pack --dry-run` 的 15 个文件里没有 `docs/`、`test/`、`fixtures/`、`scripts/`、`billing-probe-*.json`、`1201-billing*.json`、`.tmp-shot*.png`。
+- `node --test` 82/82 通过（全部打本地 mock，不耗额度）。
+- `npm pack --dry-run` 的 16 个文件里没有 `docs/`、`test/`、`fixtures/`、`scripts/`、`billing-probe-*.json`、`1201-billing*.json`、`.tmp-shot*.png`。
 - `git status` 干净；`git log -p` 里没有密钥、`VIBE_HOME` 缓存。
 - 两个 README 互链有效，徽章 URL 与 `repository` / `homepage` / `bugs` 都指向真实地址。
 - `package.json` 的 `version` 与 tag 一致。

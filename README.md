@@ -47,7 +47,7 @@ magpie plugin add github:zhuangzm/magpie-mistral-pool
 # 2) 本地目录（改代码时用）
 magpie plugin add <本仓库路径>
 
-# 3) npm 包（尚未发布，发布流程见 docs/publish.md）
+# 3) npm 包（可选，尚未发布；流程见 docs/publish.md）
 # magpie plugin add @solary/magpie-mistral-pool
 ```
 
